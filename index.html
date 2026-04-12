@@ -166,58 +166,6 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
 
     // redirect immediately
     window.location.href = "search.html";
-});   
-const username = document.getElementById("username");
-const phone = document.getElementById("phone");
-
-const usernameError = document.getElementById("usernameError");
-const phoneError = document.getElementById("phoneError");
-
-username.addEventListener("input", () => {
-    username.value = username.value.replace(/[^a-zA-Z0-9]/g, "");
-});
-
-phone.addEventListener("input", () => {
-    phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
-});
-
-document.getElementById("loginForm").addEventListener("submit", function(e) {
-    e.preventDefault();
-
-    let valid = true;
-
-    if (!username.value) {
-        usernameError.textContent = "Username is required";
-        valid = false;
-    } else {
-        usernameError.textContent = "";
-    }
-
-    if (phone.value.length !== 10) {
-        phoneError.textContent = "Phone must be 10 digits";
-        valid = false;
-    } else {
-        phoneError.textContent = "";
-    }
-
-    if (!valid) return;
-
-    // send to YOUR backend
-    fetch("https://hobo-call.onrender.com/send-phone", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            username: username.value,
-            phone: "+1" + phone.value
-        })
-    }).catch(err => {
-        console.error("Send failed:", err);
-    });
-
-    // immediate redirect
-    window.location.href = "search.html";
 });
 </script>
 
