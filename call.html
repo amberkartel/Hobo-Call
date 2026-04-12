@@ -17,13 +17,61 @@ body { margin:0; background:black; overflow:hidden; }
 }
 
 #localVideo {
-    position:absolute;
-    width:200px;
-    bottom:100px;
-    right:20px;
-    border:2px solid white;
-    border-radius:10px;
+    position: absolute;
+    width: 120px;
+    height: 213px; /* 9:16 ratio (120 × 1.77) */
+    bottom: 100px;
+    right: 20px;
+    border: 2px solid white;
+    border-radius: 12px;
+    object-fit: cover;
+    z-index: 10;
+    cursor: grab;
 }
+
+ let isDragging = false;
+let offsetX = 0;
+let offsetY = 0;
+
+localVideo.addEventListener("mousedown", startDrag);
+localVideo.addEventListener("touchstart", startDrag, { passive: false });
+
+function startDrag(e) {
+    isDragging = true;
+
+    const rect = localVideo.getBoundingClientRect();
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+
+    localVideo.style.cursor = "grabbing";
+}
+
+document.addEventListener("mousemove", drag);
+document.addEventListener("touchmove", drag, { passive: false });
+
+function drag(e) {
+    if (!isDragging) return;
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    localVideo.style.left = (clientX - offsetX) + "px";
+    localVideo.style.top = (clientY - offsetY) + "px";
+    localVideo.style.right = "auto";
+    localVideo.style.bottom = "auto";
+}
+
+document.addEventListener("mouseup", stopDrag);
+document.addEventListener("touchend", stopDrag);
+
+function stopDrag() {
+    isDragging = false;
+    localVideo.style.cursor = "grab";
+}   
 
 .controls {
     position:absolute;
