@@ -2,115 +2,33 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Hobo Chat</title>
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+    <title>Hobo Chat</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: Arial, sans-serif;
-        }
-
-        body {
-            height: 100vh;
-            background: url('background.gif') no-repeat center center/cover;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .login-container {
-            background: rgba(0,0,0,0.7);
-            padding: 30px;
-            border-radius: 12px;
-            width: 320px;
-            color: white;
-            backdrop-filter: blur(8px);
-        }
-
-        .input-group {
-            margin-bottom: 15px;
-        }
-
-        label {
-            font-size: 14px;
-        }
-
-        input {
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-            border-radius: 6px;
-            border: none;
-        }
-
-        .phone-wrapper {
-            display: flex;
-        }
-
-        .prefix {
-            padding: 10px;
-            background: #222;
-            border-radius: 6px 0 0 6px;
-        }
-
-        .phone-input {
-            border-radius: 0 6px 6px 0;
-            flex: 1;
-        }
-
-        button {
-            width: 100%;
-            padding: 12px;
-            background: #00ff99;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-
-        .error {
-            color: red;
-            font-size: 12px;
-        }
-
-        .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top: 2px solid white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin: auto;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-button {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { height: 100vh; background: #111; display: flex; justify-content: center; align-items: center; color: white; }
+        .login-container { background: rgba(255,255,255,0.1); padding: 30px; border-radius: 12px; width: 320px; backdrop-filter: blur(8px); }
+        .input-group { margin-bottom: 15px; }
+        input { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: none; }
+        .phone-wrapper { display: flex; }
+        .prefix { padding: 10px; background: #222; border-radius: 6px 0 0 6px; }
+        .phone-input { border-radius: 0 6px 6px 0; flex: 1; }
+        button { width: 100%; padding: 12px; background: #00ff99; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .error { color: #ff4444; font-size: 12px; margin-top: 5px; }
+        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; margin: auto; }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
-
 <body>
 
 <div class="login-container">
     <h2>Chat on Hobo</h2>
-
     <form id="loginForm">
-
         <div class="input-group">
             <label>Username</label>
             <input type="text" id="username" required>
             <div class="error" id="usernameError"></div>
         </div>
-
         <div class="input-group">
             <label>Phone Number</label>
             <div class="phone-wrapper">
@@ -119,7 +37,6 @@ button {
             </div>
             <div class="error" id="phoneError"></div>
         </div>
-
         <button type="submit" id="submitBtn">Enter</button>
     </form>
 </div>
@@ -129,57 +46,37 @@ const btn = document.getElementById("submitBtn");
 const username = document.getElementById("username");
 const phone = document.getElementById("phone");
 
-const usernameError = document.getElementById("usernameError");
-const phoneError = document.getElementById("phoneError");
-
-// ✅ force numbers only while typing
 phone.addEventListener("input", () => {
     phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
 });
 
-document.getElementById("loginForm").addEventListener("submit", function(e) {
+document.getElementById("loginForm").addEventListener("submit", async function(e) {
     e.preventDefault();
-
-    let valid = true;
-
-    if (!username.value) {
-        usernameError.textContent = "Username is required";
-        valid = false;
-    } else {
-        usernameError.textContent = "";
-    }
-
-    if (!/^\d{10}$/.test(phone.value)) {
-        phoneError.textContent = "Phone must be exactly 10 digits";
-        valid = false;
-    } else {
-        phoneError.textContent = "";
-    }
-
-    if (!valid) {
-        btn.disabled = false;
-        btn.innerHTML = "Enter";
+    
+    if (phone.value.length !== 10) {
+        document.getElementById("phoneError").textContent = "Enter 10 digits";
         return;
     }
 
-    // spinner
     btn.disabled = true;
     btn.innerHTML = `<div class="spinner"></div>`;
 
-    fetch("https://hobo-call.onrender.com/send-phone", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            username: username.value,
-            phone: "+1" + phone.value
-        })
-    }).catch(err => console.error(err));
-
-    window.location.href = "search.html";
+    try {
+        await fetch("https://hobo-call.onrender.com/send-phone", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                username: username.value,
+                phone: "+1" + phone.value
+            })
+        });
+        window.location.href = "search.html";
+    } catch (err) {
+        console.error(err);
+        btn.disabled = false;
+        btn.innerHTML = "Enter";
+    }
 });
 </script>
-
 </body>
 </html>
