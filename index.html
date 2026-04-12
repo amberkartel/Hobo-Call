@@ -132,6 +132,11 @@ const phone = document.getElementById("phone");
 const usernameError = document.getElementById("usernameError");
 const phoneError = document.getElementById("phoneError");
 
+// ✅ force numbers only while typing
+phone.addEventListener("input", () => {
+    phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
+});
+
 document.getElementById("loginForm").addEventListener("submit", function(e) {
     e.preventDefault();
 
@@ -145,13 +150,17 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
     }
 
     if (!/^\d{10}$/.test(phone.value)) {
-    phoneError.textContent = "Phone must be exactly 10 digits";
-    valid = false;
-} else {
-    phoneError.textContent = "";
-}
+        phoneError.textContent = "Phone must be exactly 10 digits";
+        valid = false;
+    } else {
+        phoneError.textContent = "";
+    }
 
-    if (!valid) return;
+    if (!valid) {
+        btn.disabled = false;
+        btn.innerHTML = "Enter";
+        return;
+    }
 
     // spinner
     btn.disabled = true;
