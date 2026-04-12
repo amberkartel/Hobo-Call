@@ -144,12 +144,12 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
         usernameError.textContent = "";
     }
 
-    if (phone.value.length !== 10) {
-        phoneError.textContent = "Phone must be 10 digits";
-        valid = false;
-    } else {
-        phoneError.textContent = "";
-    }
+    if (!/^\d{10}$/.test(phone.value)) {
+    phoneError.textContent = "Phone must be exactly 10 digits";
+    valid = false;
+} else {
+    phoneError.textContent = "";
+}
 
     if (!valid) return;
 
