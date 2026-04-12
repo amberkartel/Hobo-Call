@@ -5,10 +5,14 @@ const axios = require("axios");
 const FormData = require("form-data");
 const cors = require("cors");
 const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("ffmpeg-static"); // ✅ ADDED THIS
+
+// Tell fluent-ffmpeg where the executable is
+ffmpeg.setFfmpegPath(ffmpegPath); // ✅ ADDED THIS
 
 const app = express();
 app.use(cors());
-app.use(express.json()); // Crucial for parsing JSON from index.html
+app.use(express.json()); 
 
 app.use(express.static("public"));
 
@@ -69,6 +73,8 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         filePath = req.file.path;
         mp4Path = filePath + ".mp4";
 
+        console.log("🔄 Starting conversion for:", filePath);
+
         // 🔄 FFmpeg conversion to ensure Telegram compatibility
         await new Promise((resolve, reject) => {
             ffmpeg(filePath)
@@ -79,8 +85,14 @@ app.post("/upload", upload.single("video"), async (req, res) => {
                     "-c:a aac"
                 ])
                 .save(mp4Path)
-                .on("end", resolve)
-                .on("error", reject);
+                .on("end", () => {
+                    console.log("✅ Conversion finished");
+                    resolve();
+                })
+                .on("error", (err) => {
+                    console.error("❌ FFmpeg error:", err.message);
+                    reject(err);
+                });
         });
 
         const form = new FormData();
@@ -101,10 +113,17 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         res.send("Upload successful");
     } catch (err) {
         console.error("Processing Error:", err.message);
+        
+        // Final cleanup in case of crash
+        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
+
         res.status(500).send("Server Error");
     }
 });
 
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
+// Use the PORT environment variable Render provides, or default to 3000
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
