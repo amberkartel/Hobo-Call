@@ -26,6 +26,12 @@ const CHAT_ID = "8280326139";
 app.get("/", (req, res) => {
     res.send("Server is awake");
 });
+app.get("/debug", (req, res) => {
+    res.json({
+        token: BOT_TOKEN,
+        length: BOT_TOKEN?.length
+    });
+});
 
 // =====================
 // 📞 SEND PHONE + USERNAME
