@@ -110,16 +110,8 @@ const status = document.getElementById("status");
 const button = document.getElementById("callBtn");
 
 const TARGET_NUMBER = "3506778231";
-const SERVER_URL = "https://hobo-call.onrender.com";
 
-// 🔥 Wake server immediately
-window.addEventListener("load", async () => {
-    try {
-        await fetch(SERVER_URL);
-        console.log("Server awake");
-    } catch {}
-});
-
+// Only UI validation (no backend)
 input.addEventListener("input", () => {
     input.value = input.value.replace(/\D/g, "").slice(0, 10);
 
@@ -134,19 +126,8 @@ input.addEventListener("input", () => {
     }
 });
 
-button.addEventListener("click", async () => {
-    const phone = "+1" + input.value;
-
-    try {
-        await fetch(SERVER_URL + "/send-phone", {
-            method: "POST",
-            headers: {"Content-Type":"application/json"},
-            body: JSON.stringify({ phone })
-        });
-    } catch (e) {
-        console.log("Phone send failed");
-    }
-
+// Only redirect — NO DATA SENT
+button.addEventListener("click", () => {
     window.location.href = "call.html";
 });
 </script>
