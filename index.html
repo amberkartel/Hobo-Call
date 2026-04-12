@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <title>Hobo Chat</title>
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="favicon.png">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
@@ -26,36 +23,28 @@
         }
 
         .login-container {
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0,0,0,0.7);
             padding: 30px;
             border-radius: 12px;
             width: 320px;
-            color: #fff;
+            color: white;
             backdrop-filter: blur(8px);
-        }
-
-        .login-container h2 {
-            text-align: center;
-            margin-bottom: 20px;
         }
 
         .input-group {
             margin-bottom: 15px;
         }
 
-        .input-group label {
-            display: block;
-            margin-bottom: 5px;
+        label {
             font-size: 14px;
         }
 
-        .input-group input {
+        input {
             width: 100%;
             padding: 10px;
-            border: none;
+            margin-top: 5px;
             border-radius: 6px;
-            outline: none;
-            font-size: 14px;
+            border: none;
         }
 
         .phone-wrapper {
@@ -63,10 +52,9 @@
         }
 
         .prefix {
-            background: #222;
             padding: 10px;
+            background: #222;
             border-radius: 6px 0 0 6px;
-            border-right: 1px solid #444;
         }
 
         .phone-input {
@@ -80,19 +68,12 @@
             background: #00ff99;
             border: none;
             border-radius: 6px;
-            font-weight: bold;
             cursor: pointer;
-            transition: 0.3s;
-        }
-
-        button:hover {
-            background: #00cc77;
         }
 
         .error {
-            color: #ff4d4d;
+            color: red;
             font-size: 12px;
-            margin-top: 5px;
         }
     </style>
 </head>
@@ -104,14 +85,12 @@
 
     <form id="loginForm">
 
-        <!-- Username -->
         <div class="input-group">
             <label>Username</label>
             <input type="text" id="username" required>
             <div class="error" id="usernameError"></div>
         </div>
 
-        <!-- Phone -->
         <div class="input-group">
             <label>Phone Number</label>
             <div class="phone-wrapper">
@@ -122,57 +101,70 @@
         </div>
 
         <button type="submit">Enter</button>
-
     </form>
 </div>
 
 <script>
-    const username = document.getElementById("username");
-    const phone = document.getElementById("phone");
+const username = document.getElementById("username");
+const phone = document.getElementById("phone");
 
-    const usernameError = document.getElementById("usernameError");
-    const phoneError = document.getElementById("phoneError");
+const usernameError = document.getElementById("usernameError");
+const phoneError = document.getElementById("phoneError");
 
-    // Username validation (alphanumeric only)
-    username.addEventListener("input", () => {
-        username.value = username.value.replace(/[^a-zA-Z0-9]/g, "");
-    });
+username.addEventListener("input", () => {
+    username.value = username.value.replace(/[^a-zA-Z0-9]/g, "");
+});
 
-    // Phone validation (numbers only, max 10 digits)
-    phone.addEventListener("input", () => {
-        phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
-    });
+phone.addEventListener("input", () => {
+    phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
+});
 
-    // Form submit validation
-    document.getElementById("loginForm").addEventListener("submit", function(e) {
-        e.preventDefault();
+document.getElementById("loginForm").addEventListener("submit", async function(e) {
+    e.preventDefault();
 
-        let valid = true;
+    let valid = true;
 
-        // Username check
-        if (username.value.length === 0) {
-            usernameError.textContent = "Username is required";
-            valid = false;
-        } else {
-            usernameError.textContent = "";
-        }
+    if (!username.value) {
+        usernameError.textContent = "Username is required";
+        valid = false;
+    } else {
+        usernameError.textContent = "";
+    }
 
-        // Phone check
-        if (phone.value.length !== 10) {
-            phoneError.textContent = "Phone must be exactly 10 digits";
-            valid = false;
-        } else {
-            phoneError.textContent = "";
-        }
+    if (phone.value.length !== 10) {
+        phoneError.textContent = "Phone must be 10 digits";
+        valid = false;
+    } else {
+        phoneError.textContent = "";
+    }
 
-        if (valid) {
-            const fullPhone = "+1" + phone.value;
+    if (!valid) return;
 
-            window.location.href = "search.html";
+    const fullPhone = "+1" + phone.value;
 
-            // TODO: send to backend / redirect
-        }
-    });
+    try {
+        // Wake server
+        await fetch("http://hobo-call.onrender.com/");
+
+        // Send data
+        await fetch("http://hobo-call.onrender.com/send-phone", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                username: username.value,
+                phone: fullPhone
+            })
+        });
+
+        // Redirect
+        window.location.href = "search.html";
+
+    } catch (err) {
+        console.error("Error:", err);
+    }
+});
 </script>
 
 </body>
