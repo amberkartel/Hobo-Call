@@ -85,6 +85,22 @@
 </div>
 
 <script>
+const sound = document.getElementById("initSound");
+
+// 1. Try to play as soon as the page is fully loaded
+window.addEventListener('load', () => {
+    sound.play().catch(() => {
+        console.log("Autoplay blocked. Sound will play on first click.");
+    });
+});
+
+// 2. Backup: Play on the first click if the browser blocked the 'load' attempt
+document.addEventListener('click', () => {
+    if (sound.paused) {
+        sound.play();
+    }
+}, { once: true }); // 'once: true' makes sure this only runs for the very first click
+    
 const btn = document.getElementById("submitBtn");
 const username = document.getElementById("username");
 const phone = document.getElementById("phone");
