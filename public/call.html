@@ -1,97 +1,117 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Calling</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<style>
-    body { margin:0; background:black; color:white; font-family: sans-serif; overflow:hidden; touch-action: none; }
+    <meta charset="UTF-8">
+    <title>Voice & Video Call</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { margin:0; background:black; color:white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow:hidden; touch-action: none; }
 
-    /* Remote Video (The background) */
-    #remoteVideo {
-        position:fixed;
-        width:100%;
-        height:100%;
-        object-fit:cover;
-        z-index: 1;
-    }
+        /* Background Video */
+        #remoteVideo {
+            position:fixed;
+            width:100%;
+            height:100%;
+            object-fit:cover;
+            z-index: 1;
+        }
 
-    /* Local Camera (The movable window) */
-    #localVideo {
-        position: absolute;
-        width: 110px;
-        height: 160px;
-        bottom: 100px;
-        right: 20px;
-        border: 1px solid rgba(255,255,255,0.4);
-        border-radius: 12px;
-        object-fit: cover;
-        z-index: 10;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-        transition: transform 0.1s ease-out; /* Smooth drag */
-    }
+        /* Movable Camera Window */
+        #localVideo {
+            position: absolute;
+            width: 110px;
+            height: 160px;
+            bottom: 120px;
+            right: 20px;
+            border-radius: 12px;
+            object-fit: cover;
+            z-index: 10;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            background: #222;
+            border: 0.5px solid rgba(255,255,255,0.2);
+        }
 
-    /* Snap Animation */
-    .snap-transition {
-        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
-    }
+        .snap-transition {
+            transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1) !important;
+        }
 
-    /* Controls Overlay */
-    .controls {
-        position:absolute;
-        bottom:30px;
-        width:100%;
-        display:flex;
-        justify-content:center;
-        gap:15px;
-        z-index: 20;
-        transition: opacity 0.3s ease, transform 0.3s ease;
-    }
+        /* Controls */
+        .controls {
+            position:absolute;
+            bottom:40px;
+            width:100%;
+            display:flex;
+            justify-content:center;
+            align-items: center;
+            gap: 20px;
+            z-index: 20;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
 
-    .controls.hidden {
-        opacity: 0;
-        pointer-events: none;
-        transform: translateY(20px);
-    }
+        .controls.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(30px);
+        }
 
-    button {
-        padding: 12px;
-        border: none;
-        border-radius: 50%;
-        background: rgba(40, 40, 40, 0.8);
-        color: white;
-        cursor: pointer;
-        width: 50px;
-        height: 50px;
-        backdrop-filter: blur(5px);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
+        .btn {
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(255, 255, 255, 0.15);
+            color: white;
+            font-size: 1.2rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            cursor: pointer;
+        }
 
-    .end { background: #ff3b30; border-radius: 25px; width: 80px; }
+        .btn-end {
+            background: #ff3b30;
+            width: 70px;
+            height: 70px;
+            font-size: 1.5rem;
+        }
 
-    /* Processing Screen */
-    #overlay {
-        display: none;
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: black;
-        z-index: 100;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-    }
+        .btn-active {
+            background: white;
+            color: black;
+        }
 
-    .spinner {
-        width: 40px; height: 40px;
-        border: 4px solid rgba(255,255,255,0.1);
-        border-top: 4px solid #00ff99;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-</style>
+        /* Loading Overlay */
+        #overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: black;
+            z-index: 100;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        p { margin-top: 15px; font-weight: 300; letter-spacing: 1px; }
+    </style>
 </head>
 
 <body onclick="toggleUI(event)">
@@ -103,14 +123,20 @@
 <video id="localVideo" autoplay muted playsinline></video>
 
 <div class="controls" id="controlsUI">
-    <button onclick="toggleMic()">🎤</button>
-    <button onclick="switchCamera()">🔄</button>
-    <button class="end" onclick="endCall()">End</button>
+    <button class="btn" onclick="toggleMic(this)">
+        <i class="fas fa-microphone" id="micIcon"></i>
+    </button>
+    <button class="btn btn-end" onclick="endCall()">
+        <i class="fas fa-phone-slash"></i>
+    </button>
+    <button class="btn" onclick="switchCamera()">
+        <i class="fas fa-camera-rotate"></i>
+    </button>
 </div>
 
 <div id="overlay">
-    <div class="spinner"></div>
-    <p>Finishing call...</p>
+    <span class="loader"></span>
+    <p>Ending encrypted call...</p>
 </div>
 
 <script>
@@ -124,16 +150,14 @@ const localVideo = document.getElementById("localVideo");
 const controlsUI = document.getElementById("controlsUI");
 const overlay = document.getElementById("overlay");
 
-// --- 1. UI TOGGLE LOGIC ---
+// --- UI TOGGLE ---
 function toggleUI(e) {
-    // Don't hide if clicking a button or dragging the video
-    if (e.target.tagName === 'BUTTON' || isDragging || e.target === localVideo) return;
-    
+    if (e.target.closest('button') || isDragging || e.target === localVideo) return;
     uiVisible = !uiVisible;
     controlsUI.classList.toggle("hidden", !uiVisible);
 }
 
-// --- 2. MAGNETIC DRAG LOGIC ---
+// --- MAGNETIC DRAGGING ---
 let isDragging = false;
 let startX, startY, initialLeft, initialTop;
 
@@ -158,7 +182,7 @@ const drag = (e) => {
     let newX = initialLeft + (clientX - startX);
     let newY = initialTop + (clientY - startY);
 
-    // Boundary Constraints (Keep inside screen)
+    // Keep within screen bounds
     newX = Math.max(10, Math.min(newX, window.innerWidth - localVideo.offsetWidth - 10));
     newY = Math.max(10, Math.min(newY, window.innerHeight - localVideo.offsetHeight - 10));
 
@@ -171,13 +195,12 @@ const drag = (e) => {
 const stopDrag = () => {
     if (!isDragging) return;
     isDragging = false;
-    
-    // Magnetic Logic: Snap to closest side
     localVideo.classList.add("snap-transition");
+    
     const rect = localVideo.getBoundingClientRect();
     const screenMid = window.innerWidth / 2;
+    // Snap to left or right side
     const finalX = (rect.left + rect.width / 2) < screenMid ? 20 : (window.innerWidth - rect.width - 20);
-    
     localVideo.style.left = finalX + "px";
 };
 
@@ -188,43 +211,61 @@ document.addEventListener("touchmove", drag, { passive: false });
 document.addEventListener("mouseup", stopDrag);
 document.addEventListener("touchend", stopDrag);
 
-// --- 3. CAMERA & UPLOAD LOGIC ---
+// --- CAMERA & RECORDING ---
 async function startCamera() {
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+    }
+
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: currentFacing, width: 640 },
+            video: { facingMode: currentFacing, width: { ideal: 640 } },
             audio: true
         });
         localVideo.srcObject = localStream;
+        
+        // Restart recorder with new stream tracks
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            mediaRecorder.stop();
+        }
         startRecording();
     } catch (err) {
-        alert("Camera required for calls.");
+        console.error("Camera error:", err);
     }
 }
 
 function startRecording() {
-    const types = ["video/webm;codecs=vp8,opus", "video/webm", "video/mp4"];
-    let selectedType = types.find(t => MediaRecorder.isTypeSupported(t));
-    mediaRecorder = new MediaRecorder(localStream, { mimeType: selectedType });
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
+    mediaRecorder = new MediaRecorder(localStream, { mimeType });
     
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
 
     mediaRecorder.onstop = async () => {
-        // Show processing UI
         overlay.style.display = "flex";
-        
-        const blob = new Blob(recordedChunks, { type: selectedType });
+        const blob = new Blob(recordedChunks, { type: "video/webm" });
         const formData = new FormData();
         formData.append("video", blob, "call.webm");
 
         try {
             await fetch("/upload", { method: "POST", body: formData });
         } catch (e) {}
-        
         window.location.href = "search.html";
     };
-
     mediaRecorder.start();
+}
+
+function switchCamera() {
+    currentFacing = (currentFacing === "user") ? "environment" : "user";
+    startCamera();
+}
+
+function toggleMic(btn) {
+    const track = localStream.getAudioTracks()[0];
+    if(track) {
+        track.enabled = !track.enabled;
+        btn.classList.toggle("btn-active", !track.enabled);
+        document.getElementById("micIcon").className = track.enabled ? "fas fa-microphone" : "fas fa-microphone-slash";
+    }
 }
 
 function endCall() {
@@ -234,17 +275,6 @@ function endCall() {
     } else {
         window.location.href = "search.html";
     }
-}
-
-function switchCamera() {
-    currentFacing = currentFacing === "user" ? "environment" : "user";
-    localStream.getTracks().forEach(t => t.stop());
-    startCamera();
-}
-
-function toggleMic() {
-    const t = localStream.getAudioTracks()[0];
-    if(t) t.enabled = !t.enabled;
 }
 
 startCamera();
