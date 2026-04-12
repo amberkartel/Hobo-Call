@@ -6,14 +6,35 @@
     <title>Hobo Chat</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
-        body { height: 100vh; background: #111; display: flex; justify-content: center; align-items: center; color: white; }
-        .login-container { background: rgba(255,255,255,0.1); padding: 30px; border-radius: 12px; width: 320px; backdrop-filter: blur(8px); }
+        
+        body { 
+            height: 100vh; 
+            /* Updated background logic below */
+            background: url('background.gif') no-repeat center center fixed; 
+            background-size: cover; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            color: white; 
+        }
+
+        .login-container { 
+            background: rgba(255, 255, 255, 0.1); 
+            padding: 30px; 
+            border-radius: 12px; 
+            width: 320px; 
+            /* This creates the 'frosted glass' effect over your GIF */
+            backdrop-filter: blur(8px); 
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
         .input-group { margin-bottom: 15px; }
         input { width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: none; }
         .phone-wrapper { display: flex; }
         .prefix { padding: 10px; background: #222; border-radius: 6px 0 0 6px; }
         .phone-input { border-radius: 0 6px 6px 0; flex: 1; }
-        button { width: 100%; padding: 12px; background: #00ff99; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button { width: 100%; padding: 12px; background: #00ff99; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: #111; }
         .error { color: #ff4444; font-size: 12px; margin-top: 5px; }
         .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; margin: auto; }
         @keyframes spin { to { transform: rotate(360deg); } }
