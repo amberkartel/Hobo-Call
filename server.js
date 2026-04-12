@@ -10,6 +10,8 @@ const app = express();
 app.use(cors());
 app.use(express.json()); // Crucial for parsing JSON from index.html
 
+app.use(express.static("public"));
+
 // Ensure uploads folder exists
 if (!fs.existsSync("uploads")) {
     fs.mkdirSync("uploads");
