@@ -7,6 +7,18 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
 
+        /* Prevents zoom on focus for mobile inputs */
+input, select, textarea {
+    font-size: 16px !important;
+}
+
+/* If 16px makes the text look too big for your design, 
+   you can use a transform to scale it back down visually */
+.your-input-class {
+    font-size: 16px;
+}
+
+
         .logo {
     width: 80px;      /* Adjust the width to your liking */
     height: auto;     /* Keeps the image from stretching */
