@@ -7,6 +7,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
+    /* This stops the auto-zoom by meeting the browser's 16px requirement */
+input[type="text"], 
+input[type="search"], 
+textarea {
+    font-size: 16px !important;
+}
+
+/* Optional: If 16px looks too big for your search bar design, 
+   scale it down visually while keeping the base size at 16px */
+.search-input {
+    font-size: 16px;
+    /* transform: scale(0.9); */ /* Uncomment if needed */
+}
+
 * { margin:0; padding:0; box-sizing:border-box; font-family:Arial; }
 body { overflow:hidden; height:100vh; }
 
