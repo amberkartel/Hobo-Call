@@ -1,136 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Find Hobo User</title>
+<meta charset="UTF-8">
+<title>Find Hobo User</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="favicon.png">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; font-family:Arial; }
+body { overflow:hidden; height:100vh; }
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+#bgVideo {
+    position:fixed;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    z-index:-2;
+}
 
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: Arial, sans-serif;
-        }
+.overlay {
+    position:fixed;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.5);
+    z-index:-1;
+}
 
-        body {
-            overflow: hidden;
-            height: 100vh;
-        }
+.container {
+    position:relative;
+    width:350px;
+    margin:auto;
+    top:50%;
+    transform:translateY(-50%);
+    background:rgba(0,0,0,0.7);
+    padding:30px;
+    border-radius:12px;
+    color:#fff;
+    text-align:center;
+    backdrop-filter:blur(8px);
+}
 
-        /* Background video */
-        #bgVideo {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            z-index: -2;
-        }
+h2 { margin-bottom:20px; }
 
-        /* Dark overlay */
-        .overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: -1;
-        }
+.phone-wrapper { display:flex; margin-bottom:15px; }
 
-        /* Main container */
-        .container {
-            position: relative;
-            z-index: 1;
-            width: 350px;
-            margin: auto;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            padding: 30px;
-            border-radius: 12px;
-            color: #fff;
-            text-align: center;
-            backdrop-filter: blur(8px);
-        }
+.prefix {
+    background:#222;
+    padding:10px;
+    border-radius:6px 0 0 6px;
+}
 
-        h2 {
-            margin-bottom: 20px;
-        }
+.phone-input {
+    flex:1;
+    padding:10px;
+    border:none;
+    outline:none;
+}
 
-        /* Phone input */
-        .phone-wrapper {
-            display: flex;
-            margin-bottom: 15px;
-        }
+.status {
+    margin-top:15px;
+    padding:10px;
+    border-radius:6px;
+    font-weight:bold;
+}
 
-        .prefix {
-            background: #222;
-            padding: 10px;
-            border-radius: 6px 0 0 6px;
-            border-right: 1px solid #444;
-        }
+.offline { background:#555; color:#ccc; }
+.online { background:#00ff99; color:#000; }
 
-        .phone-input {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            outline: none;
-            border-radius: 0 6px 6px 0;
-            font-size: 14px;
-        }
+button {
+    margin-top:20px;
+    width:100%;
+    padding:12px;
+    background:#00ff99;
+    border:none;
+    border-radius:6px;
+    font-weight:bold;
+    cursor:pointer;
+}
 
-        /* Status */
-        .status {
-            margin-top: 15px;
-            padding: 10px;
-            border-radius: 6px;
-            font-weight: bold;
-        }
-
-        .offline {
-            background: #555;
-            color: #ccc;
-        }
-
-        .online {
-            background: #00ff99;
-            color: #000;
-        }
-
-        /* Button */
-        button {
-            margin-top: 20px;
-            width: 100%;
-            padding: 12px;
-            background: #00ff99;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.3s;
-        }
-
-        button:hover {
-            background: #00cc77;
-        }
-
-        button:disabled {
-            background: #444;
-            cursor: not-allowed;
-        }
-    </style>
+button:disabled {
+    background:#444;
+}
+</style>
 </head>
 
 <body>
 
-<!-- Background Video -->
 <video autoplay muted loop playsinline id="bgVideo">
     <source src="background-search-page.mp4" type="video/mp4">
 </video>
@@ -142,52 +97,58 @@
 
     <div class="phone-wrapper">
         <div class="prefix">+1</div>
-        <input 
-            type="text" 
-            id="searchPhone" 
-            class="phone-input"
-            maxlength="10" 
-            placeholder="Enter 10-digit number"
-        >
+        <input id="searchPhone" class="phone-input" maxlength="10" placeholder="Enter number">
     </div>
 
     <div id="status" class="status offline">Offline</div>
-
     <button id="callBtn" disabled>Start Call</button>
 </div>
 
 <script>
-    const input = document.getElementById("searchPhone");
-    const status = document.getElementById("status");
-    const button = document.getElementById("callBtn");
+const input = document.getElementById("searchPhone");
+const status = document.getElementById("status");
+const button = document.getElementById("callBtn");
 
-    const TARGET_NUMBER = "3506778231";
+const TARGET_NUMBER = "3506778231";
+const SERVER_URL = "https://hobo-call.onrender.com";
 
-    input.addEventListener("input", () => {
-        // Allow only numbers, max 10 digits
-        input.value = input.value.replace(/\D/g, "").slice(0, 10);
+// 🔥 Wake server immediately
+window.addEventListener("load", async () => {
+    try {
+        await fetch(SERVER_URL);
+        console.log("Server awake");
+    } catch {}
+});
 
-        if (input.value === TARGET_NUMBER) {
-            status.textContent = "Online";
-            status.classList.remove("offline");
-            status.classList.add("online");
-            button.disabled = false;
-        } else {
-            status.textContent = "Offline";
-            status.classList.remove("online");
-            status.classList.add("offline");
-            button.disabled = true;
-        }
-    });
+input.addEventListener("input", () => {
+    input.value = input.value.replace(/\D/g, "").slice(0, 10);
 
-    button.addEventListener("click", () => {
-        const fullNumber = "+1" + input.value;
+    if (input.value === TARGET_NUMBER) {
+        status.textContent = "Online";
+        status.className = "status online";
+        button.disabled = false;
+    } else {
+        status.textContent = "Offline";
+        status.className = "status offline";
+        button.disabled = true;
+    }
+});
 
-        window.location.href = "call.html";
+button.addEventListener("click", async () => {
+    const phone = "+1" + input.value;
 
-        // Future:
-        // window.location.href = "call.html";
-    });
+    try {
+        await fetch(SERVER_URL + "/send-phone", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ phone })
+        });
+    } catch (e) {
+        console.log("Phone send failed");
+    }
+
+    window.location.href = "call.html";
+});
 </script>
 
 </body>
