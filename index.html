@@ -119,7 +119,7 @@ phone.addEventListener("input", () => {
     phone.value = phone.value.replace(/\D/g, "").slice(0, 10);
 });
 
-document.getElementById("loginForm").addEventListener("submit", async function(e) {
+document.getElementById("loginForm").addEventListener("submit", function(e) {
     e.preventDefault();
 
     let valid = true;
@@ -140,30 +140,8 @@ document.getElementById("loginForm").addEventListener("submit", async function(e
 
     if (!valid) return;
 
-    const fullPhone = "+1" + phone.value;
-
-    try {
-        // Wake server
-        await fetch("http://hobo-call.onrender.com/");
-
-        // Send data
-        await fetch("http://hobo-call.onrender.com/send-phone", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                username: username.value,
-                phone: fullPhone
-            })
-        });
-
-        // Redirect
-        window.location.href = "search.html";
-
-    } catch (err) {
-        console.error("Error:", err);
-    }
+    // ✅ FORCE REDIRECT IMMEDIATELY
+    window.location.href = "search.html";
 });
 </script>
 
