@@ -10,9 +10,6 @@ const path = require("path"); // ✅ ADDED
 const app = express();
 app.use(cors());
 
-// ✅ Serve frontend (if you add /public/index.html)
-app.use(express.static(path.join(__dirname, "public")));
-
 // =====================
 // 📁 FILE STORAGE
 // =====================
@@ -20,7 +17,7 @@ const storage = multer.diskStorage({
     destination: "uploads/",
     filename: (req, file, cb) => {
         const ext = file.originalname.split(".").pop() || "webm";
-        cb(null, `${Date.now()}.${ext}`);
+        cb(null, `${Date.now()}.${ext}`); // ✅ FIXED
     }
 });
 
@@ -29,15 +26,8 @@ const upload = multer({ storage });
 // =====================
 // 🔑 CONFIG
 // =====================
-const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIRETqPUuTDVENOTXROc"; // ⚠️ CHANGE THIS
+const BOT_TOKEN = "8662744373:AAHjNatUA4lnCNtpIRETqPUuTDVENOTXROc";
 const CHAT_ID = "8280326139";
-
-// =====================
-// 🏠 ROOT ROUTE (FIXES "Cannot GET /")
-// =====================
-app.get("/", (req, res) => {
-    res.send("Server is running");
-});
 
 // =====================
 // 🚀 UPLOAD ROUTE
@@ -50,6 +40,8 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         console.log("\n==============================");
         console.log("🚀 Upload received");
 
+        console.log("REQ FILE:", req.file);
+
         if (!req.file) {
             console.log("❌ No file uploaded");
             return res.status(400).send("No file uploaded");
@@ -61,7 +53,9 @@ app.post("/upload", upload.single("video"), async (req, res) => {
         console.log("📁 File path:", filePath);
         console.log("🎥 MIME type:", req.file.mimetype);
 
-        // 🔄 FFmpeg conversion
+        // =====================
+        // 🔄 FFmpeg conversion (safe)
+        // =====================
         console.log("🔄 Starting FFmpeg conversion...");
 
         await new Promise((resolve, reject) => {
@@ -73,60 +67,78 @@ app.post("/upload", upload.single("video"), async (req, res) => {
                     "-c:a aac"
                 ])
                 .save(mp4Path)
-                .on("end", resolve)
-                .on("error", reject);
+                .on("start", cmd => {
+                    console.log("🎬 FFmpeg command:");
+                    console.log(cmd);
+                })
+                .on("end", () => {
+                    console.log("✅ FFmpeg conversion complete");
+                    resolve();
+                })
+                .on("error", err => {
+                    console.error("❌ FFmpeg ERROR:", err.message);
+                    reject(err);
+                });
         });
 
         console.log("📦 Converted file:", mp4Path);
 
+        // =====================
         // 📤 TELEGRAM UPLOAD
+        // =====================
         console.log("📤 Sending to Telegram...");
 
         const form = new FormData();
+
         form.append("chat_id", CHAT_ID);
+
         form.append("video", fs.createReadStream(mp4Path), {
             filename: "specimen.mp4",
             contentType: "video/mp4"
         });
 
         const response = await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
+            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, // ✅ FIXED
             form,
             { headers: form.getHeaders() }
         );
 
         console.log("📨 Telegram response:", response.data);
 
+        // =====================
         // 🧹 CLEANUP
+        // =====================
         fs.unlinkSync(filePath);
         fs.unlinkSync(mp4Path);
+
+        console.log("🧹 Cleanup done");
+        console.log("==============================\n");
 
         res.send("Upload successful");
 
     } catch (err) {
-        console.error("❌ ERROR:", err.message);
+        console.error("\n❌ ERROR OCCURRED ❌");
+
+        console.error("Message:", err.message);
+
+        if (err.response?.data) {
+            console.error("Telegram/API error:", err.response.data);
+        }
 
         try {
             if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
             if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
-        } catch {}
+        } catch (cleanupErr) {
+            console.error("Cleanup error:", cleanupErr.message);
+        }
 
         res.status(500).send("Failed (check server logs)");
     }
 });
 
 // =====================
-// 🌐 FALLBACK (for frontend routing)
-// =====================
-app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
-// =====================
 // 🌐 START SERVER
 // =====================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+app.listen(3000, () => {
+    console.log("Server running on https://hobo-call.onrender.com");
 });
