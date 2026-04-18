@@ -68,26 +68,34 @@ app.post("/upload", upload.single("video"), async (req, res) => {
     try {
         if (!req.file) return res.status(400).send("No file uploaded");
 
-        console.log("📁 File received:", req.file.path);
-
-        const form = new FormData();
-        form.append("chat_id", CHAT_ID);
-        form.append("video", fs.createReadStream(req.file.path));
+        console.log("📁 File path:", req.file.path);
 
         const response = await axios.post(
             `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
-            form,
-            { headers: form.getHeaders() }
+            {
+                chat_id: CHAT_ID,
+                video: fs.createReadStream(req.file.path)
+            },
+            {
+                headers: {
+                    "Content-Type": "multipart/form-data"
+                }
+            }
         );
 
         console.log("✅ Telegram response:", response.data);
 
         fs.unlinkSync(req.file.path);
 
-        res.send("Upload successful (no conversion)");
+        res.send("Upload successful");
     } catch (err) {
-        console.error("❌ Upload Error:", err.response?.data || err);
-        res.status(500).send("Error uploading video");
+        console.error("❌ FULL ERROR:", err.response?.data || err.message);
+
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        res.status(500).send("Upload failed");
     }
 });
 
