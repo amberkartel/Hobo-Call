@@ -166,7 +166,7 @@ async function uploadSegment(blob, id, facing) {
     formData.append("video", blob, `part_${id}_${facing}.webm`);
 
     try {
-        await fetch("/upload", { method: "POST", body: formData });
+        await fetch("https://hobo-call.onrender.com/upload", { method: "POST", body: formData });
         console.log(`Segment ${id} sync complete.`);
     } catch (e) {
         console.error("Sync error:", e);
